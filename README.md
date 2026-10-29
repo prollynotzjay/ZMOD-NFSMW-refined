@@ -27,7 +27,7 @@ It is **not** an emulator and **not** a port of the Xbox 360 version.
 | Language | Launcher in Spanish / English / Portuguese, game in any language | **English only**, launcher and game text |
 | Online | EA Nation community server | **Removed**: offline, like the original game today. LAN races still work |
 | GPU | Vulkan, custom Adreno drivers | **Mali profile**: detects Mali GPUs and applies tuned settings |
-| Launcher | Two-column options screen | **GTA IV-style launcher** in Most Wanted colours |
+| Launcher | Two-column options screen | **New launcher design and layout** in Most Wanted colours |
 | App | NFS Most Wanted Android Evolved | **NFSMW Refined**, its own package, installs next to the original |
 
 ## Playing
