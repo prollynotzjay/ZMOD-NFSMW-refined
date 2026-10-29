@@ -6,7 +6,7 @@
 
 **Need for Speed: Most Wanted (2005, PC) running natively on Android**
 
-English only · offline · Mali support · GTA IV-style launcher
+English only · offline · Mali support · Whole New UI Design
 
 By **[prollynotzjay](https://github.com/prollynotzjay)**, based on
 **[codepdbh/nfsmwpc-recompiled](https://github.com/codepdbh/nfsmwpc-recompiled)**
