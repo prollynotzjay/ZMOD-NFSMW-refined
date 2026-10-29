@@ -5,7 +5,7 @@ import android.content.SharedPreferences;
 
 /**
  * Launcher options. GameActivity reads them when the game process starts and hands them to the native
- * runtime before the guest boots; changing one takes effect on the next JUGAR.
+ * runtime before the guest boots; changing one takes effect on the next PLAY.
  */
 final class GameOptions {
     static final class Option {
@@ -24,28 +24,28 @@ final class GameOptions {
             TEXTURES = "textures", MINIMAP = "minimap", LANGUAGE = "language", GAMEPAD = "gamepad";
 
     static final Option[] ALL = {
-            new Option(RESOLUTION, "Resolución interna", "75",
+            new Option(RESOLUTION, "Internal resolution", "75",
                     new String[] {"100", "75", "50", "720", "480", "360"},
-                    new String[] {"Nativa · máxima calidad", "75% · equilibrada", "50% · máximo rendimiento",
-                            "720p · adaptada a la pantalla", "480p · rendimiento", "360p · máximo rendimiento"}),
-            new Option(FPS, "Límite de FPS", "120",
+                    new String[] {"Native · best quality", "75% · balanced", "50% · best performance",
+                            "720p · fitted to the screen", "480p · performance", "360p · best performance"}),
+            new Option(FPS, "FPS limit", "120",
                     new String[] {"30", "60", "90", "120", "0"},
-                    new String[] {"30 FPS · ahorra batería", "60 FPS", "90 FPS", "120 FPS", "Sin límite"}),
-            new Option(WIDESCREEN, "Pantalla panorámica", "on",
+                    new String[] {"30 FPS · saves battery", "60 FPS", "90 FPS", "120 FPS", "Unlimited"}),
+            new Option(WIDESCREEN, "Widescreen", "on",
                     new String[] {"on", "off"},
-                    new String[] {"HUD proporcional", "HUD original estirado"}),
-            new Option(MINIMAP, "Minimapa", "top",
+                    new String[] {"Proportional HUD", "Original stretched HUD"}),
+            new Option(MINIMAP, "Minimap", "top",
                     new String[] {"top", "bottom"},
-                    new String[] {"Arriba a la izquierda", "Abajo a la izquierda (original)"}),
-            new Option(LATENCY, "Sincronía CPU/GPU", "2",
+                    new String[] {"Top left", "Bottom left (original)"}),
+            new Option(LATENCY, "CPU/GPU sync", "2",
                     new String[] {"2", "1"},
-                    new String[] {"Rendimiento · CPU y GPU en paralelo", "Baja latencia · menos FPS"}),
-            new Option(TEXTURES, "Texturas comprimidas", "auto",
+                    new String[] {"Performance · CPU and GPU in parallel", "Low latency · fewer FPS"}),
+            new Option(TEXTURES, "Compressed textures", "auto",
                     new String[] {"auto", "cpu"},
-                    new String[] {"Automático · GPU si las soporta", "Convertir en CPU · compatibilidad"}),
-            new Option(GAMEPAD, "Mando Bluetooth/USB", "keys",
+                    new String[] {"Automatic · GPU if supported", "Convert on CPU · compatibility"}),
+            new Option(GAMEPAD, "Bluetooth/USB gamepad", "keys",
                     new String[] {"keys", "directinput"},
-                    new String[] {"Como teclado · compatible", "Joystick DirectInput · analógico, experimental"}),
+                    new String[] {"As keyboard · compatible", "DirectInput joystick · analog, experimental"}),
     };
 
     private static final String PREFS = "nfsmw_game";
@@ -72,21 +72,11 @@ final class GameOptions {
         prefs(context).edit().putString(key, value).apply();
     }
 
-    static final String ONLINE_SERVER = "online_server", DEFAULT_ONLINE_SERVER = "eahub.eu";
+    /** NFSMW Refined is English only: the game always loads LANGUAGES/English.bin. */
+    static final String ENGLISH = "English";
 
-    /** EA Nation replacement server: the game's *.ea.com hosts resolve to this name or IPv4 address. */
-    static String onlineServer(Context context) {
-        String value = prefs(context).getString(ONLINE_SERVER, DEFAULT_ONLINE_SERVER);
-        return validServer(value) ? value : DEFAULT_ONLINE_SERVER;
-    }
-
-    static boolean validServer(String value) {
-        return value != null && value.length() <= 253 && value.matches("[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*");
-    }
-
-    /** The game's language folder name (LANGUAGES/<file>.bin) chosen in the launcher. */
     static String language(Context context) {
-        return prefs(context).getString(LANGUAGE, "Spanish");
+        return ENGLISH;
     }
 
     /** Render size for the selected resolution on a display of width × height (landscape). */

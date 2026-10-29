@@ -758,7 +758,7 @@ extern "C" void recomp_dump_trace(const char*) {}
 
 std::string connectGuestRuntime(const char* executable) {
     std::unique_lock<MachineMutex> guard(machine);machineLease=&guard;
-    if (memory) return "Runtime guest ya inicializado";
+    if (memory) return "Guest runtime already initialized";
     State original; original.save();
     try {
         stopRequested=false;
@@ -811,7 +811,7 @@ std::string connectGuestRuntime(const char* executable) {
         shutdownD3D9Bridge();
 #endif
         original.load();
-        return "Entrada guest terminada: "+std::to_string(result);
+        return "Guest entry finished: "+std::to_string(result);
     } catch (const std::exception& e) {
         NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Guest integration boundary: %s",e.what());
         joinGuestThreads(guard);machineLease=nullptr;shutdownGuestSound();
@@ -870,7 +870,7 @@ void setGuestPointer(float x,float y,int phase){
     enqueueGuestPointer(phase);
 }
 void typeGuestText(const std::vector<uint32_t>& characters){enqueueGuestText(characters);}
-void setGuestOnlineServer(const std::string& host){std::lock_guard<MachineMutex> lock(machine);if(!memory&&!host.empty())onlineServer=host;}
+
 void setGuestNetworkIdentity(uint64_t identity){
     std::lock_guard<MachineMutex> lock(machine);if(memory)return;
     for(unsigned i=0;i<6;++i)guestNetworkMac[i]=uint8_t(identity>>(8*i));

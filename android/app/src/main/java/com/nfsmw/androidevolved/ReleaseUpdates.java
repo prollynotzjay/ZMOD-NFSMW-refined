@@ -16,8 +16,8 @@ import javax.net.ssl.HttpsURLConnection;
 
 /** Optional official GitHub updates. No APK is installed or downloaded in the background. */
 final class ReleaseUpdates {
-    private static final String REPO = "https://github.com/codepdbh/nfsmwpc-recompiled/";
-    private static final String API = "https://api.github.com/repos/codepdbh/nfsmwpc-recompiled/releases/latest";
+    private static final String REPO = "https://github.com/prollynotzjay/ZMOD-NFSMW-refined/";
+    private static final String API = "https://api.github.com/repos/prollynotzjay/ZMOD-NFSMW-refined/releases/latest";
     static final class Result {
         final String tag, url, error;
         Result(String tag, String url, String error) { this.tag = tag; this.url = url; this.error = error; }
@@ -33,7 +33,7 @@ final class ReleaseUpdates {
         Thread worker = new Thread(() -> {
             Result result;
             try { result = fetch(app, force); }
-            catch (Exception error) { result = new Result(null, null, "No se pudo consultar GitHub. Comprueba tu conexión e inténtalo después."); }
+            catch (Exception error) { result = new Result(null, null, "Could not reach GitHub. Check your connection and try again later."); }
             Result value = result;
             main.post(() -> callback.accept(value));
         }, "GitHubReleaseCheck");
@@ -72,10 +72,10 @@ final class ReleaseUpdates {
             String notes = null;
             try {
                 HttpsURLConnection connection = (HttpsURLConnection) new URL(
-                        "https://api.github.com/repos/codepdbh/nfsmwpc-recompiled/releases/tags/v" + Uri.encode(version)).openConnection();
+                        "https://api.github.com/repos/prollynotzjay/ZMOD-NFSMW-refined/releases/tags/v" + Uri.encode(version)).openConnection();
                 connection.setConnectTimeout(6000); connection.setReadTimeout(6000);
                 connection.setRequestProperty("Accept", "application/vnd.github+json");
-                connection.setRequestProperty("User-Agent", "NFSMW-Android-Evolved/" + version);
+                connection.setRequestProperty("User-Agent", "NFSMW-Refined/" + version);
                 try {
                     if (connection.getResponseCode() == 200) {
                         ByteArrayOutputStream body = new ByteArrayOutputStream();
@@ -116,7 +116,7 @@ final class ReleaseUpdates {
         HttpsURLConnection connection = (HttpsURLConnection) new URL(API).openConnection();
         connection.setConnectTimeout(6000); connection.setReadTimeout(6000);
         connection.setRequestProperty("Accept", "application/vnd.github+json");
-        connection.setRequestProperty("User-Agent", "NFSMW-Android-Evolved/" + installed(context));
+        connection.setRequestProperty("User-Agent", "NFSMW-Refined/" + installed(context));
         connection.setRequestProperty("X-GitHub-Api-Version", "2026-03-10");
         try {
             int code = connection.getResponseCode();
@@ -126,12 +126,12 @@ final class ReleaseUpdates {
                         .putString("latest_tag", "").putString("latest_url", REPO + "releases").apply();
                 return new Result("", REPO + "releases", null);
             }
-            if (code != 200) throw new IOException("GitHub no disponible");
+            if (code != 200) throw new IOException("GitHub not available");
             ByteArrayOutputStream body = new ByteArrayOutputStream();
             try (InputStream input = connection.getInputStream()) {
                 byte[] buffer = new byte[8192]; int n;
                 while ((n = input.read(buffer)) != -1) {
-                    if (body.size() + n > 512 * 1024) throw new IOException("Respuesta demasiado grande");
+                    if (body.size() + n > 512 * 1024) throw new IOException("Response too large");
                     body.write(buffer, 0, n);
                 }
             }

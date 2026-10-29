@@ -71,24 +71,24 @@ public final class GameActivity extends NativeActivity {
         }
     }
     private void showTiltOptions() {
-        if(tiltSensor==null) {Toast.makeText(this,tr("Este dispositivo no dispone de acelerómetro"),Toast.LENGTH_LONG).show();return;}
+        if(tiltSensor==null) {Toast.makeText(this,tr("This device has no accelerometer"),Toast.LENGTH_LONG).show();return;}
         android.content.SharedPreferences options=getSharedPreferences("touch_layouts_v1",MODE_PRIVATE);
         LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(24),dp(8),dp(24),dp(8));
-        CheckBox enabled=new CheckBox(this);enabled.setText(tr("Girar inclinando el celular"));enabled.setChecked(tiltEnabled);form.addView(enabled);
-        CheckBox invert=new CheckBox(this);invert.setText(tr("Invertir dirección"));invert.setChecked(tiltInvert);form.addView(invert);
-        TextView label=new TextView(this);label.setText(tr("Sensibilidad: %s×",tiltSensitivity));form.addView(label);
+        CheckBox enabled=new CheckBox(this);enabled.setText(tr("Steer by tilting the phone"));enabled.setChecked(tiltEnabled);form.addView(enabled);
+        CheckBox invert=new CheckBox(this);invert.setText(tr("Invert direction"));invert.setChecked(tiltInvert);form.addView(invert);
+        TextView label=new TextView(this);label.setText(tr("Sensitivity: %s×",tiltSensitivity));form.addView(label);
         android.widget.SeekBar sensitivity=new android.widget.SeekBar(this);sensitivity.setMax(30);sensitivity.setProgress(Math.round(tiltSensitivity*10)-10);form.addView(sensitivity);
         sensitivity.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
             public void onStartTrackingTouch(android.widget.SeekBar bar) {}public void onStopTrackingTouch(android.widget.SeekBar bar) {}
-            public void onProgressChanged(android.widget.SeekBar bar,int progress,boolean user) {label.setText(tr("Sensibilidad: %s×",(progress+10)/10f));}
+            public void onProgressChanged(android.widget.SeekBar bar,int progress,boolean user) {label.setText(tr("Sensitivity: %s×",(progress+10)/10f));}
         });
-        TextView help=new TextView(this);help.setText(tr("Sostén el celular en tu posición de juego al aplicar. La inclinación activa izquierda/derecha; los pedales siguen siendo táctiles."));form.addView(help);
-        new AlertDialog.Builder(this).setTitle(tr("Conducción por inclinación")).setView(form)
-                .setPositiveButton(tr("Aplicar y calibrar"),(dialog,which)->{
+        TextView help=new TextView(this);help.setText(tr("Hold the phone in your playing position when applying. Tilting steers left/right; the pedals stay on the touch screen."));form.addView(help);
+        new AlertDialog.Builder(this).setTitle(tr("Tilt steering")).setView(form)
+                .setPositiveButton(tr("Apply and calibrate"),(dialog,which)->{
                     tiltEnabled=enabled.isChecked();tiltInvert=invert.isChecked();tiltSensitivity=(sensitivity.getProgress()+10)/10f;
                     options.edit().putBoolean("tilt.enabled",tiltEnabled).putBoolean("tilt.invert",tiltInvert).putFloat("tilt.sensitivity",tiltSensitivity).apply();
                     updateTiltSensor();
-                }).setNegativeButton(tr("Cancelar"),null).show();
+                }).setNegativeButton(tr("Cancel"),null).show();
     }
     private android.hardware.input.InputManager inputManager;
     private final android.hardware.input.InputManager.InputDeviceListener gamepadListener=new android.hardware.input.InputManager.InputDeviceListener() {
@@ -147,7 +147,6 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeResolution(int width, int height);
     private static native void nativeFrameLimit(int framesPerSecond);
     private static native void nativeWidescreen(boolean enabled);
-    private static native void nativeOnlineServer(String host);
     private static native void nativeNetworkIdentity(long identity);
     private static native void nativeGamepadConnected(boolean connected);
     private static native void nativeGamepadDevices(int[] ids);
@@ -163,32 +162,32 @@ public final class GameActivity extends NativeActivity {
                 .setSingleChoiceItems(Lang.t(this,option.labels),selected,(dialog,which)->{
                     GameOptions.set(this,GameOptions.FPS,option.values[which]);
                     nativeFrameLimit(Integer.parseInt(option.values[which]));dialog.dismiss();
-                }).setNegativeButton(tr("Cancelar"),null).show();
+                }).setNegativeButton(tr("Cancel"),null).show();
     }
-    private String tr(String spanish,Object... args) {return Lang.t(this,spanish,args);}
+    private String tr(String text,Object... args) {return Lang.t(this,text,args);}
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private void showTextInput() {
         EditText name = new EditText(this);
         name.setSingleLine(true);
-        name.setHint(tr("Nombre, correo o contraseña"));
+        name.setHint(tr("Name, e-mail or password"));
         name.setFilters(new InputFilter[]{new InputFilter.LengthFilter(40)});
         name.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD |
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         name.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         CheckBox replace = new CheckBox(this);
-        replace.setText(tr("Reemplazar el nombre actual"));replace.setChecked(true);
+        replace.setText(tr("Replace the current name"));replace.setChecked(true);
         LinearLayout form = new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(20), 0, dp(20), 0);form.addView(name);form.addView(replace);
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(tr("Escribir en el juego"))
+                .setTitle(tr("Type in the game"))
                 .setView(form)
-                .setNegativeButton(tr("Cancelar"),null)
-                .setPositiveButton(tr("Escribir"), null)
+                .setNegativeButton(tr("Cancel"),null)
+                .setPositiveButton(tr("Type"), null)
                 .create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
             String value = name.getText().toString();
             if (value.isEmpty() || !value.matches("[A-Za-z0-9 .,=/;_+?:!@#$%&*()-]{1,40}")) {
-                name.setError(tr("Hasta 40 caracteres: letras sin tildes, números y . , - _ @ + ! # $ % & * ( ) = ? / ; :"));
+                name.setError(tr("Up to 40 characters: letters without accents, digits and . , - _ @ + ! # $ % & * ( ) = ? / ; :"));
                 return;
             }
             nativeTypeText(value, replace.isChecked());
@@ -234,8 +233,6 @@ public final class GameActivity extends NativeActivity {
         nativeLanguage(language != null ? language : GameOptions.language(this));
         nativeFrameLimit(launch.getIntExtra("frameCap", Integer.parseInt(GameOptions.get(this, GameOptions.FPS))));
         nativeWidescreen(launch.getBooleanExtra("widescreen", GameOptions.get(this, GameOptions.WIDESCREEN).equals("on")));
-        String server = launch.getStringExtra("onlineServer");
-        nativeOnlineServer(GameOptions.validServer(server) ? server : GameOptions.onlineServer(this));
         nativeMinimapTop(launch.getBooleanExtra("minimapTop", GameOptions.get(this, GameOptions.MINIMAP).equals("top")));
         nativeBackBuffers(launch.getIntExtra("backBuffers", Integer.parseInt(GameOptions.get(this, GameOptions.LATENCY))));
         nativeCpuTextures(launch.getBooleanExtra("cpuTextures", GameOptions.get(this, GameOptions.TEXTURES).equals("cpu")));
@@ -248,7 +245,7 @@ public final class GameActivity extends NativeActivity {
         status.setBackgroundColor(0xb0000000);
         status.setTextSize(18);
         status.setPadding(24, 16, 24, 16);
-        status.setText("NFS Most Wanted Android Evolved\nComprobando memoria interna/nfsmw…");
+        status.setText("NFSMW Refined\nChecking internal storage/nfsmw…");
         // NativeActivity gives its main window surface to Vulkan; use a separate
         // non-interactive popup surface for the diagnostic text.
         statusWindow = new PopupWindow(status, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -263,13 +260,13 @@ public final class GameActivity extends NativeActivity {
     public void setStatus(String message) {
         runOnUiThread(() -> {
             if (statusHideTask != null) status.removeCallbacks(statusHideTask);
-            if (message.contains("Ejecutando entrada CRT")) {
-                status.setText("NFS Most Wanted Android Evolved\n" + message);
+            if (message.contains("Starting the game (CRT entry)")) {
+                status.setText("NFSMW Refined\n" + message);
                 statusHideTask = () -> {statusHidden=true;if(statusWindow.isShowing())statusWindow.dismiss();};
                 status.postDelayed(statusHideTask, 8000);
             } else {
                 statusHidden=false;
-                status.setText("NFS Most Wanted Android Evolved\n" + message);
+                status.setText("NFSMW Refined\n" + message);
                 if (!statusWindow.isShowing() && hasWindowFocus())
                     statusWindow.showAtLocation(getWindow().getDecorView(), Gravity.TOP | Gravity.START, 0, 0);
             }
@@ -332,7 +329,7 @@ public final class GameActivity extends NativeActivity {
                     && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
         if (!allowed && !requested) {
             requested = true;
-            Toast.makeText(this, tr("Permite acceso a archivos para leer la carpeta nfsmw de la memoria interna"), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, tr("Allow file access to read the nfsmw folder in internal storage"), Toast.LENGTH_LONG).show();
             if (Build.VERSION.SDK_INT >= 30) {
                 startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
                         Uri.parse("package:" + getPackageName())));

@@ -343,9 +343,6 @@ extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nat
 extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeWidescreen(JNIEnv*,jclass,jboolean enabled){setGuestWidescreen(enabled==JNI_TRUE);}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeNetworkIdentity(JNIEnv*,jclass,jlong identity){setGuestNetworkIdentity(uint64_t(identity));}
 // Minimap at the top-left: the bottom-left corner sits under the steering thumb.
-extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeOnlineServer(JNIEnv* env,jclass,jstring host){
-    const char* text=env->GetStringUTFChars(host,nullptr);setGuestOnlineServer(text?text:"");env->ReleaseStringUTFChars(host,text);
-}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeMinimapTop(JNIEnv*,jclass,jboolean top){nfs_widescreen_set_minimap_offset(top==JNI_TRUE?-230.0f:0.0f);}
 static bool compatCpuTextures=false;static unsigned compatBackBuffers=2;
 extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeBackBuffers(JNIEnv*,jclass,jint count){
@@ -367,7 +364,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nat
     customVulkanDriver=true;
     void* handle=nfsOpenVulkan(h.c_str(),t.c_str(),d.c_str(),l.c_str());
     auto entry=nfsVulkanEntry(handle);
-    if(!entry){customVulkanError="No se pudo cargar el driver Vulkan "+l+". Elige el driver del sistema en el launcher.";return;}
+    if(!entry){customVulkanError="Could not load the Vulkan driver "+l+". Choose the system driver in the launcher.";return;}
     dxvkAndroidSetInstanceProcAddr(entry);
 }
 static void configurePipelineCache(android_app* app){
@@ -424,7 +421,7 @@ void android_main(android_app* app) {
             auto status=host.guestWorker.status();
             if(status!=host.guestStatus){
                 host.guestStatus=status;
-                showStatus(app,("Datos accesibles: memoria interna/nfsmw\nVulkan 1.1: presentación activa\n"+status).c_str());
+                showStatus(app,("Game data found: internal storage/nfsmw\nVulkan 1.1: presentation active\n"+status).c_str());
             }
             if (host.renderer.device&&!host.renderer.draw()) host.renderer.stop();
         } catch (const std::exception& e) {

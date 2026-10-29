@@ -5,9 +5,13 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,76 +22,115 @@ import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
-import android.widget.Button;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.File;
-import java.util.ArrayList;
+import java.io.InputStream;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Launcher in the style of the MW and Carbon ports: game files and JUGAR on the left, options on the
- * right (Vulkan driver, resolution, frame cap, widescreen, compatibility).
+ * NFSMW Refined launcher, in prollynotzjay's GTA IV-style launcher layout with a Most Wanted look:
+ * a night-street backdrop, the title and a big menu on the left (PLAY, GAME FILES, GRAPHICS & CONTROLS,
+ * DRIVER, ABOUT), one panel at a time on dark glass on the right, and a controller hint bar at the bottom.
+ * The selected menu item turns Most Wanted amber; red / blue pursuit lights are the secondary accents.
  */
 public final class LauncherActivity extends Activity {
     private static final int REQUEST_DRIVER_ZIP = 45, REQUEST_DRIVER_PROBE = 46;
-    // Launcher accent: Underground orange/red (the NFSU2 port is green).
-    private static final int ACCENT = 0xFFFF7A1A;
-    /** {label, guest language name, LANGUAGES/<file>.bin}. */
-    private static final String[][] LANGUAGES = {
-        {"Español", "Spanish", "Spanish"}, {"English", "English", "English"},
-        {"Français", "French", "French"}, {"Deutsch", "German", "German"},
-        {"Italiano", "Italian", "Italian"}, {"Nederlands", "Dutch", "Dutch"},
-        {"Svenska", "Swedish", "Swedish"}, {"Dansk", "Danish", "Danish"},
-        {"Suomi", "Finnish", "Finnish"}, {"Polski", "Polish", "Polish"},
-        {"한국어", "Korean", "Korean"}, {"中文", "Chinese", "Chinese"}
-    };
+    private static final String REPO = "https://github.com/prollynotzjay/ZMOD-NFSMW-refined";
+    private static final String ORIGINAL_REPO = "https://github.com/codepdbh/nfsmwpc-recompiled";
 
-    private LinearLayout checksList, optionsList;
-    private TextView status;
-    private Button play, access;
+    // Most Wanted palette.
+    private static final int AMBER = 0xFFFFB000, AMBER_TINT = 0x33FFB000, AMBER_DARK = 0xFF1A1100;
+    private static final int PURSUIT_RED = 0xFFE5262E, PURSUIT_BLUE = 0xFF2A63FF;
+    private static final int TEXT = 0xFFF2F2F2, MUTED = 0xFF9EA3AB, MENU_GREY = 0xFFCDCDCD;
+    private static final int OK = 0xFF7CD992, BAD = 0xFFFF6B6B, WARN = 0xFFFFC857;
+    /** Every dp() and text size goes through it, like the GTA IV launcher. */
+    private static final float UI_SCALE = 0.82f;
+
+    private static final int PANEL_PLAY = 0, PANEL_FILES = 1, PANEL_GRAPHICS = 2, PANEL_DRIVER = 3, PANEL_ABOUT = 4;
+    private static final String[] PANEL_NAMES = {"PLAY", "GAME FILES", "GRAPHICS & CONTROLS", "DRIVER", "ABOUT"};
+    private final View[] panels = new View[PANEL_NAMES.length];
+    private final TextView[] navItems = new TextView[PANEL_NAMES.length];
+    private int panel = PANEL_PLAY;
+
+    private LinearLayout checksList, filesList, optionsList, driverList, aboutList;
+    private TextView status, filesStatus;
+    private View play, access;
+    private Typeface fontBold, fontBlack, fontTag;
     private boolean playAfterProbe, checkingUpdates, resumed;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        loadFonts();
+        hideSystemBars();
         setContentView(buildScreen());
-        // First launch: the three flags come before any option.
-        if (!Lang.chosen(this)) showLanguagePicker();
+        // Mali support: tuned settings the first time the launcher runs on a Mali GPU.
+        worker.execute(() -> {
+            boolean applied = MaliProfile.applyIfNew(this);
+            main.post(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                refresh();
+                if (applied) message("Mali GPU detected", "Settings tuned for " + MaliProfile.renderer(this)
+                        + ":\n" + MaliProfile.describe(this) + "\n\nYou can change them in GRAPHICS & CONTROLS.");
+            });
+        });
         checkUpdates(false);
         String updated = ReleaseUpdates.pendingWhatsNew(this);
         if (updated != null) showWhatsNew(updated);
     }
 
+    private void hideSystemBars() {
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN |
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+    }
+
+    @Override public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
+        if (focused) hideSystemBars();
+    }
+
+    private void loadFonts() {
+        try {
+            fontBold = new Typeface.Builder(getAssets(), "fonts/Nunito.ttf").setFontVariationSettings("'wght' 700").build();
+            fontBlack = new Typeface.Builder(getAssets(), "fonts/Nunito.ttf").setFontVariationSettings("'wght' 950").build();
+        } catch (RuntimeException error) {
+            fontBold = Typeface.DEFAULT_BOLD;
+            fontBlack = Typeface.DEFAULT_BOLD;
+        }
+        try { fontTag = Typeface.createFromAsset(getAssets(), "fonts/RockSalt-Regular.ttf"); }
+        catch (RuntimeException error) { fontTag = Typeface.create("casual", Typeface.ITALIC); }
+    }
+
     /** First launch after an update: the installed version's release notes from GitHub. */
     private void showWhatsNew(String version) {
         AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle(tr("¡Actualizado a la versión %s!", version))
-                .setMessage(tr("Cargando las novedades…"))
-                .setPositiveButton(tr("Aceptar"), (d, which) -> ReleaseUpdates.whatsNewSeen(this))
-                .setNeutralButton(tr("Ver en GitHub"), (d, which) -> {
+                .setTitle(tr("Updated to version %s!", version))
+                .setMessage(tr("Loading what's new…"))
+                .setPositiveButton(tr("OK"), (d, which) -> ReleaseUpdates.whatsNewSeen(this))
+                .setNeutralButton(tr("View on GitHub"), (d, which) -> {
                     ReleaseUpdates.whatsNewSeen(this);
-                    openUrl(Uri.parse("https://github.com/codepdbh/nfsmwpc-recompiled/releases/tag/v" + Uri.encode(version)));
+                    openUrl(Uri.parse(REPO + "/releases/tag/v" + Uri.encode(version)));
                 })
                 .setOnCancelListener(d -> ReleaseUpdates.whatsNewSeen(this))
                 .show();
         ReleaseUpdates.releaseNotes(this, version, notes -> {
             if (!dialog.isShowing()) return;
             // In the app, skip the download/install preamble of the release page.
-            int start = notes == null ? -1 : notes.indexOf("Novedades");
+            int start = notes == null ? -1 : notes.indexOf("What's new");
             if (start > 0) notes = notes.substring(start);
             dialog.setMessage(notes != null ? notes
-                    : tr("No se pudieron cargar las novedades (sin conexión o aún no publicadas). Puedes verlas en GitHub."));
+                    : tr("Couldn't load what's new (offline or not published yet). You can read it on GitHub."));
         });
     }
 
@@ -99,9 +142,10 @@ public final class LauncherActivity extends Activity {
         if (crash != null) {
             Diagnostics.acknowledgeCrashes(this);
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle(tr("El juego se cerró")).setMessage(tr("%s.\n\n¿Quieres enviar el registro completo a GitHub para que se pueda corregir?", crash))
-                    .setPositiveButton(tr("Reportar en GitHub"), (dialog, which) -> prepareReport(crash))
-                    .setNegativeButton(tr("Ahora no"), null).show();
+                    .setTitle("The game closed")
+                    .setMessage(tr("%s.\n\nDo you want to send the full log to GitHub so it can be fixed?", crash))
+                    .setPositiveButton("Report on GitHub", (dialog, which) -> prepareReport(crash))
+                    .setNegativeButton("Not now", null).show();
         }
     }
 
@@ -110,99 +154,248 @@ public final class LauncherActivity extends Activity {
         super.onPause();
     }
 
+    /** Controller: A selects (Android's own focus handling), B goes back to PLAY, START plays. */
+    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_START && play != null && play.isEnabled()) { play(); return true; }
+        if ((keyCode == KeyEvent.KEYCODE_BUTTON_B || keyCode == KeyEvent.KEYCODE_BACK) && panel != PANEL_PLAY) {
+            showPanel(PANEL_PLAY);
+            navItems[PANEL_PLAY].requestFocus();
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
     // ---- Screen ------------------------------------------------------------------------------------------
 
     private View buildScreen() {
-        FrameLayout screen = new FrameLayout(this);
-        screen.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[] {0xFF0E0604, 0xFF2E0B05, 0xFF0E0604}));
-        LinearLayout columns = new LinearLayout(this);
-        columns.setPadding(dp(24), dp(10), dp(24), dp(10));
-        screen.addView(columns, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF08090C);
+        // Rockport at night behind the menu, darker on the left where the menu is.
+        ImageView backdrop = new ImageView(this);
+        backdrop.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        try (InputStream in = getAssets().open("launcher/background.jpg")) {
+            backdrop.setImageBitmap(BitmapFactory.decodeStream(in));
+        } catch (java.io.IOException ignored) {
+        }
+        root.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
+        View shade = new View(this);
+        shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[] {0xF208090C, 0xC808090C, 0x6008090C}));
+        root.addView(shade, new FrameLayout.LayoutParams(-1, -1));
+        // Pursuit light bar: a thin red / blue line across the top.
+        LinearLayout lightBar = new LinearLayout(this);
+        View red = new View(this), blue = new View(this);
+        red.setBackgroundColor(PURSUIT_RED);
+        blue.setBackgroundColor(PURSUIT_BLUE);
+        lightBar.addView(red, new LinearLayout.LayoutParams(0, -1, 1f));
+        lightBar.addView(blue, new LinearLayout.LayoutParams(0, -1, 1f));
+        root.addView(lightBar, new FrameLayout.LayoutParams(-1, dp(3), Gravity.TOP));
 
-        // Left: logo, game files and JUGAR.
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setPadding(dp(26), dp(16), dp(26), dp(8));
+        LinearLayout body = new LinearLayout(this);
+
+        // Left: title, version and the menu.
         LinearLayout left = new LinearLayout(this);
         left.setOrientation(LinearLayout.VERTICAL);
-        left.setGravity(Gravity.CENTER_HORIZONTAL);
+        ImageView banner = new ImageView(this);
+        banner.setImageResource(R.drawable.launcher_banner);
+        banner.setAdjustViewBounds(true);
+        banner.setScaleType(ImageView.ScaleType.FIT_START);
+        banner.setMaxHeight(getResources().getDisplayMetrics().heightPixels / 5);
+        left.addView(banner, new LinearLayout.LayoutParams(-1, -2));
+        left.addView(text(versionLine(), 12, MUTED, fontBold), withTop(dp(6)));
+        for (int i = 0; i < PANEL_NAMES.length; ++i) {
+            final int index = i;
+            TextView item = text(PANEL_NAMES[i], 21, MENU_GREY, fontBlack);
+            item.setGravity(Gravity.CENTER_VERTICAL);
+            item.setPadding(dp(16), 0, dp(12), 0);
+            item.setSingleLine(true);
+            item.setFocusable(true);
+            item.setClickable(true);
+            item.setOnClickListener(v -> showPanel(index));
+            navItems[i] = item;
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(44));
+            params.topMargin = dp(index == 0 ? 14 : 2);
+            left.addView(item, params);
+        }
         ScrollView leftScroll = new ScrollView(this);
-        leftScroll.setFillViewport(true);
         leftScroll.addView(left);
-        columns.addView(leftScroll, new LinearLayout.LayoutParams(0, -1, 1.1f));
+        body.addView(leftScroll, new LinearLayout.LayoutParams(0, -1, 0.85f));
 
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        ImageView logo = new ImageView(this);
-        logo.setImageResource(R.drawable.icono);
-        logo.setAdjustViewBounds(true);
-        header.addView(logo, new LinearLayout.LayoutParams(dp(76), dp(76)));
-        LinearLayout titles = new LinearLayout(this);
-        titles.setOrientation(LinearLayout.VERTICAL);
-        titles.setPadding(dp(14), 0, 0, 0);
-        titles.addView(label("Need for Speed Most Wanted", 18, Color.WHITE, true));
-        titles.addView(label(tr("PC · recompilado de forma nativa para Android"), 12, 0x99FFFFFF, false));
-        header.addView(titles);
-        left.addView(header, new LinearLayout.LayoutParams(-1, -2));
-
-        LinearLayout card = card();
-        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
-        cardParams.topMargin = dp(8);
-        left.addView(card, cardParams);
-        card.addView(label(tr("ARCHIVOS DEL JUEGO"), 12, ACCENT, true));
-        status = label("", 13, 0xDDFFFFFF, false);
-        status.setPadding(0, dp(4), 0, dp(6));
-        card.addView(status);
-        checksList = new LinearLayout(this);
-        checksList.setOrientation(LinearLayout.VERTICAL);
-        card.addView(checksList);
-
-        play = actionButton(tr("JUGAR"), true);
-        play.setOnClickListener(view -> play());
-        LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(-1, dp(54));
-        playParams.topMargin = dp(8);
-        left.addView(play, playParams);
-
-        access = actionButton(tr("Permitir acceso a memoria interna/nfsmw"), false);
-        access.setOnClickListener(view -> requestAccess());
-        LinearLayout.LayoutParams accessParams = new LinearLayout.LayoutParams(-1, dp(46));
-        accessParams.topMargin = dp(10);
-        left.addView(access, accessParams);
-
-        // Right: options.
-        LinearLayout right = card();
-        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -1, 1f);
+        // Right: one panel at a time, on dark glass.
+        FrameLayout host = new FrameLayout(this);
+        GradientDrawable glass = rounded(0xD90B0C10, dp(16));
+        glass.setStroke(dp(1), 0x26FFFFFF);
+        host.setBackground(glass);
+        View[] contents = {buildPlayPanel(), buildFilesPanel(), buildGraphicsPanel(), buildDriverPanel(), buildAboutPanel()};
+        for (int i = 0; i < contents.length; ++i) {
+            ScrollView scroll = new ScrollView(this);
+            scroll.setFillViewport(true);
+            scroll.addView(contents[i]);
+            panels[i] = scroll;
+            host.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        }
+        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -1, 1.25f);
         rightParams.leftMargin = dp(24);
-        columns.addView(right, rightParams);
-        right.addView(label(tr("OPCIONES"), 12, ACCENT, true));
-        TextView note = label(tr("Se aplican al pulsar JUGAR."), 12, 0x88FFFFFF, false);
-        note.setPadding(0, dp(2), 0, dp(4));
-        right.addView(note);
-        ScrollView scroll = new ScrollView(this);
-        optionsList = new LinearLayout(this);
-        optionsList.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(optionsList);
-        right.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
-        return screen;
+        body.addView(host, rightParams);
+
+        screen.addView(body, new LinearLayout.LayoutParams(-1, 0, 1f));
+        screen.addView(buildHintBar(), withTop(dp(6)));
+        root.addView(screen, new FrameLayout.LayoutParams(-1, -1));
+        showPanel(PANEL_PLAY);
+        return root;
     }
 
+    /** Shows one menu panel: the selected item turns amber, like GTA IV's orange. */
+    private void showPanel(int index) {
+        panel = index;
+        for (int i = 0; i < panels.length; ++i) {
+            if (panels[i] != null) panels[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
+            TextView item = navItems[i];
+            if (item == null) continue;
+            boolean selected = i == index;
+            item.setTextColor(selected ? AMBER : MENU_GREY);
+            item.setText(selected ? PANEL_NAMES[i] + "  \u203A" : PANEL_NAMES[i]);
+            item.setBackground(selected ? menuSelectedBackground() : focusBackground(Color.TRANSPARENT));
+        }
+    }
+
+    private View buildPlayPanel() {
+        LinearLayout panel = panel("READY TO RACE");
+        status = text("", 15, TEXT, fontBold);
+        panel.addView(status, withTop(dp(8)));
+        checksList = vertical();
+        panel.addView(checksList, withTop(dp(8)));
+
+        TextView playButton = text("PLAY", 32, AMBER_DARK, fontBlack);
+        playButton.setGravity(Gravity.CENTER);
+        playButton.setLetterSpacing(.12f);
+        playButton.setBackground(focusBackground(AMBER));
+        playButton.setFocusable(true);
+        playButton.setClickable(true);
+        playButton.setContentDescription("Play");
+        playButton.setOnClickListener(v -> play());
+        play = playButton;
+        LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(-1, dp(78));
+        playParams.topMargin = dp(14);
+        panel.addView(playButton, playParams);
+
+        access = button("ALLOW ACCESS TO INTERNAL STORAGE/NFSMW", false, this::requestAccess);
+        panel.addView(access, sized(dp(54), dp(12)));
+        panel.addView(text("Tip: in game, open the touch controls editor to move, resize and save your layouts.",
+                13, MUTED, fontBold), withTop(dp(14)));
+        return panel;
+    }
+
+    private View buildFilesPanel() {
+        LinearLayout panel = panel("GAME FILES");
+        filesStatus = text("", 14, TEXT, fontBold);
+        panel.addView(filesStatus, withTop(dp(8)));
+        filesList = vertical();
+        panel.addView(filesList, withTop(dp(8)));
+        panel.addView(text("NFSMW Refined needs your own copy of Need for Speed: Most Wanted (2005) for PC: "
+                + "Speed.exe and its GLOBAL, TRACKS, CARS, FRONTEND and LANGUAGES folders, copied straight into "
+                + "internal storage/nfsmw (not inside another folder). The game runs in English, so "
+                + "LANGUAGES/English.bin must be there. No game files are included or downloaded.",
+                13, MUTED, fontBold), withTop(dp(12)));
+        return panel;
+    }
+
+    private View buildGraphicsPanel() {
+        LinearLayout panel = panel("GRAPHICS & CONTROLS");
+        panel.addView(text("Applied the next time you press PLAY.", 12, MUTED, fontBold), withTop(dp(2)));
+        optionsList = vertical();
+        panel.addView(optionsList, withTop(dp(8)));
+        return panel;
+    }
+
+    private View buildDriverPanel() {
+        LinearLayout panel = panel("DRIVER");
+        driverList = vertical();
+        panel.addView(driverList, withTop(dp(8)));
+        return panel;
+    }
+
+    private View buildAboutPanel() {
+        LinearLayout panel = panel("ABOUT");
+        aboutList = vertical();
+        panel.addView(aboutList, withTop(dp(8)));
+        return panel;
+    }
+
+    /** GTA IV's hint bar: MOVE, A SELECT, B BACK, with the credits on the right. */
+    private View buildHintBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(8), dp(4), dp(8), dp(4));
+        bar.addView(text("\u25C0 \u25B6  MOVE", 15, TEXT, fontBlack));
+        bar.addView(hintButton("A", 0xFF46A03C, "SELECT"));
+        bar.addView(hintButton("B", 0xFFC8322D, "BACK"));
+        bar.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
+        TextView credits = text("Port by codepdbh  \u00B7  Refined by prollynotzjay", 13, MUTED, fontBold);
+        credits.setFocusable(true);
+        credits.setClickable(true);
+        credits.setPadding(dp(10), dp(6), dp(10), dp(6));
+        credits.setBackground(focusBackground(Color.TRANSPARENT));
+        credits.setOnClickListener(v -> showPanel(PANEL_ABOUT));
+        bar.addView(credits);
+        return bar;
+    }
+
+    private View hintButton(String letter, int color, String label) {
+        LinearLayout group = new LinearLayout(this);
+        group.setGravity(Gravity.CENTER_VERTICAL);
+        group.setPadding(dp(22), 0, 0, 0);
+        TextView circle = text(letter, 13, TEXT, fontBlack);
+        circle.setGravity(Gravity.CENTER);
+        GradientDrawable oval = new GradientDrawable();
+        oval.setShape(GradientDrawable.OVAL);
+        oval.setColor(color);
+        circle.setBackground(oval);
+        group.addView(circle, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        TextView name = text(label, 15, TEXT, fontBlack);
+        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-2, -2);
+        nameParams.leftMargin = dp(8);
+        group.addView(name, nameParams);
+        return group;
+    }
+
+    private String versionLine() {
+        String soc = Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : null;
+        return "v" + ReleaseUpdates.installed(this) + "  \u00B7  " + Build.MODEL
+                + (soc != null && !soc.isEmpty() && !"unknown".equals(soc) ? "  \u00B7  " + soc : "");
+    }
+
+    // ---- State -------------------------------------------------------------------------------------------
+
     private void refresh() {
+        if (checksList == null) return;
         boolean allowed = allowed();
         File root = gameRoot();
-        checksList.removeAllViews();
         boolean exe = allowed && new File(root, "Speed.exe").isFile();
-        addCheck("Speed.exe", exe, true);
         StringBuilder missing = new StringBuilder();
         for (String folder : new String[] {"GLOBAL", "TRACKS", "CARS", "FRONTEND", "LANGUAGES"})
             if (!(allowed && new File(root, folder).isDirectory())) missing.append(missing.length() == 0 ? "" : ", ").append(folder);
-        addCheck(missing.length() == 0 ? tr("Carpetas del juego") : tr("Faltan carpetas: %s", missing), missing.length() == 0, true);
-        boolean language = allowed && !languages().isEmpty();
-        if (exe && !language) addCheck(tr("Falta LANGUAGES/<idioma>.bin"), false, true);
-        boolean ready = exe && language;
+        boolean english = allowed && new File(root, "LANGUAGES/" + GameOptions.ENGLISH + ".bin").isFile();
+        boolean ready = exe && english;
         if (allowed && !root.isDirectory()) root.mkdirs();  // Show the player where the files go.
         String nested = allowed && !exe ? nestedGameFolder(root) : null;
-        status.setText(!allowed ? tr("Permite el acceso a archivos para leer memoria interna/nfsmw.")
-                : ready ? tr("Memoria interna/nfsmw")
-                : nested != null ? tr("Los archivos están en «%s»: mueve su contenido directamente a memoria interna/nfsmw.", nested)
-                : tr("Copia los archivos de tu juego (Speed.exe y sus carpetas) dentro de:\n%s", root.getAbsolutePath()));
+        String message = !allowed ? "Allow file access so the launcher can read internal storage/nfsmw."
+                : ready ? "Game found in internal storage/nfsmw."
+                : nested != null ? tr("The files are inside \"%s\": move its contents directly into internal storage/nfsmw.", nested)
+                : exe && !english ? "LANGUAGES/English.bin is missing. NFSMW Refined runs the game in English: "
+                        + "copy the English language file from your PC install."
+                : tr("Copy your game files (Speed.exe and its folders) into:\n%s", root.getAbsolutePath());
+        status.setText(message);
+        filesStatus.setText(allowed ? root.getAbsolutePath() : message);
+        for (LinearLayout list : new LinearLayout[] {checksList, filesList}) {
+            list.removeAllViews();
+            addCheck(list, "Speed.exe", exe);
+            addCheck(list, missing.length() == 0 ? "Game folders" : tr("Missing folders: %s", missing), missing.length() == 0);
+            addCheck(list, "LANGUAGES/English.bin", english);
+        }
         play.setEnabled(ready);
         play.setAlpha(ready ? 1f : .45f);
         access.setVisibility(allowed ? View.GONE : View.VISIBLE);
@@ -210,23 +403,50 @@ public final class LauncherActivity extends Activity {
     }
 
     private void refreshOptions() {
+        if (optionsList == null) return;
         optionsList.removeAllViews();
-        GpuDrivers.Driver driver = GpuDrivers.selected(this);
-        // Custom drivers (libadrenotools) exist only in the 64-bit build.
-        if (android.os.Process.is64Bit())
-            optionsList.addView(optionRow(tr("Driver Vulkan"), driver == null ? tr("Del sistema") : driver.name, this::chooseDriver));
-        optionsList.addView(optionRow(tr("Probar driver"), tr("GPU y funciones Vulkan"), () -> probeDriver(false)));
-        optionsList.addView(optionRow(tr("Idioma del launcher"), Lang.name(this), this::showLanguagePicker));
-        optionsList.addView(optionRow(tr("Idioma del juego"), languageLabel(), this::chooseLanguage));
         for (GameOptions.Option option : GameOptions.ALL)
-            optionsList.addView(optionRow(tr(option.title), tr(option.label(GameOptions.get(this, option.key))), () -> chooseOption(option)));
-        optionsList.addView(optionRow(tr("Servidor online"), GameOptions.onlineServer(this), this::chooseOnlineServer));
-        optionsList.addView(optionRow(tr("Buscar actualizaciones"),
-                checkingUpdates ? tr("Comprobando GitHub…") : tr("Versión %s", ReleaseUpdates.installed(this)), () -> checkUpdates(true)));
-        optionsList.addView(optionRow(tr("Reportar un problema"), tr("Log completo a GitHub"), () -> prepareReport(null)));
-    }
+            optionsList.addView(optionRow(option.title, option.label(GameOptions.get(this, option.key)), () -> chooseOption(option)));
+        if (MaliProfile.isMali(this)) {
+            optionsList.addView(optionRow("Mali profile", MaliProfile.describe(this), () -> {
+                MaliProfile.apply(this);
+                refreshOptions();
+                message("Mali profile", "Settings tuned again for " + MaliProfile.renderer(this) + ".");
+            }));
+        }
 
-    // ---- Options ---------------------------------------------------------------------------------------
+        driverList.removeAllViews();
+        GpuDrivers.Driver driver = GpuDrivers.selected(this);
+        String gpu = MaliProfile.renderer(this);
+        driverList.addView(text("GPU: " + (gpu.isEmpty() ? "unknown" : gpu), 14, TEXT, fontBold));
+        if (MaliProfile.isMali(this)) {
+            driverList.addView(text("Mali GPUs use the phone's own Vulkan driver. Custom driver packages "
+                    + "(Turnip / AdrenoTools) only work on Adreno, so they are hidden here.", 13, MUTED, fontBold), withTop(dp(6)));
+        } else if (android.os.Process.is64Bit()) {
+            // Custom drivers (libadrenotools) exist only in the 64-bit build.
+            driverList.addView(optionRow("Vulkan driver", driver == null ? "System" : driver.name, this::chooseDriver));
+        }
+        driverList.addView(optionRow("Test driver", "GPU and Vulkan features", () -> probeDriver(false)));
+
+        aboutList.removeAllViews();
+        aboutList.addView(text(versionLine(), 14, TEXT, fontBold));
+        TextView tag = text("Refined", 20, AMBER, fontTag);
+        aboutList.addView(tag, withTop(dp(4)));
+        aboutList.addView(text("Need for Speed: Most Wanted (2005, PC) running natively on Android through static "
+                + "recompilation: no emulator. English only and offline, as close to the original game as possible.",
+                13, MUTED, fontBold), withTop(dp(6)));
+        aboutList.addView(text("Original recompilation and Android port: codepdbh\n"
+                + "NFSMW Refined (English, offline, Mali, launcher): prollynotzjay\n"
+                + "pcrecomp: sp00nznet  \u00B7  HUD scaling after ThirteenAG's WidescreenFix",
+                13, TEXT, fontBold), withTop(dp(10)));
+        aboutList.addView(optionRow("prollynotzjay on GitHub", "NFSMW Refined", () -> openUrl(Uri.parse(REPO))));
+        aboutList.addView(optionRow("codepdbh on GitHub", "Original project", () -> openUrl(Uri.parse(ORIGINAL_REPO))));
+        aboutList.addView(optionRow("Check for updates",
+                checkingUpdates ? "Checking GitHub…" : tr("Version %s", ReleaseUpdates.installed(this)), () -> checkUpdates(true)));
+        aboutList.addView(optionRow("Report a problem", "Full log to GitHub", () -> prepareReport(null)));
+        aboutList.addView(text("Need for Speed is a trademark of Electronic Arts. This project is not affiliated "
+                + "with EA and includes no game files.", 11, MUTED, fontBold), withTop(dp(12)));
+    }
 
     /** A copy one folder too deep (nfsmw/<game folder>/Speed.exe), a common mistake when copying. */
     private static String nestedGameFolder(File root) {
@@ -238,87 +458,7 @@ public final class LauncherActivity extends Activity {
         return null;
     }
 
-    private String tr(String spanish, Object... args) { return Lang.t(this, spanish, args); }
-
-    /** Three flags (Spanish, English, Portuguese): the launcher texts follow the choice. */
-    private void showLanguagePicker() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(Gravity.CENTER_HORIZONTAL);
-        box.setPadding(dp(20), dp(16), dp(20), dp(12));
-        box.addView(label("Elige tu idioma · Choose your language · Escolha seu idioma", 15, Color.WHITE, true));
-        LinearLayout flags = new LinearLayout(this);
-        flags.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams flagsParams = new LinearLayout.LayoutParams(-1, -2);
-        flagsParams.topMargin = dp(14);
-        box.addView(flags, flagsParams);
-        TextView hint = label(tr("Puedes cambiarlo después en Opciones."), 12, 0x99FFFFFF, false);
-        hint.setGravity(Gravity.CENTER);
-        hint.setPadding(0, dp(12), 0, 0);
-        box.addView(hint, new LinearLayout.LayoutParams(-1, -2));
-        AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setView(box).setCancelable(Lang.chosen(this)).create();
-        for (String[] choice : Lang.CHOICES) {
-            LinearLayout flag = new LinearLayout(this);
-            flag.setOrientation(LinearLayout.VERTICAL);
-            flag.setGravity(Gravity.CENTER);
-            flag.setPadding(dp(10), dp(10), dp(10), dp(10));
-            GradientDrawable bg = new GradientDrawable();
-            boolean current = Lang.chosen(this) && Lang.code(this).equals(choice[0]);
-            bg.setColor(current ? 0x44FF7A1A : 0x16FFFFFF);
-            bg.setStroke(dp(current ? 2 : 1), current ? ACCENT : 0x44FFFFFF);
-            bg.setCornerRadius(dp(14));
-            flag.setBackground(bg);
-            TextView emoji = label(choice[1], 46, Color.WHITE, false);
-            emoji.setGravity(Gravity.CENTER);
-            flag.addView(emoji);
-            TextView name = label(choice[2], 15, Color.WHITE, true);
-            name.setGravity(Gravity.CENTER);
-            flag.addView(name);
-            flag.setClickable(true);
-            flag.setContentDescription(choice[2]);
-            flag.setOnClickListener(v -> {
-                Lang.set(this, choice[0]);
-                dialog.dismiss();
-                setContentView(buildScreen());
-                refresh();
-            });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1f);
-            params.leftMargin = params.rightMargin = dp(6);
-            flags.addView(flag, params);
-        }
-        dialog.show();
-    }
-
-    private List<String[]> languages() {
-        List<String[]> found = new ArrayList<>();
-        File root = gameRoot();
-        for (String[] language : LANGUAGES)
-            if (new File(root, "LANGUAGES/" + language[2] + ".bin").isFile()) found.add(language);
-        return found;
-    }
-
-    private String languageLabel() {
-        String current = GameOptions.language(this);
-        for (String[] language : LANGUAGES) if (language[1].equals(current)) return language[0];
-        return current;
-    }
-
-    private void chooseLanguage() {
-        List<String[]> found = allowed() ? languages() : new ArrayList<>();
-        if (found.isEmpty()) { message(tr("Idioma del juego"), tr("No se encontraron idiomas en memoria interna/nfsmw/LANGUAGES.")); return; }
-        String[] names = new String[found.size()];
-        int checked = 0;
-        for (int i = 0; i < names.length; i++) {
-            names[i] = found.get(i)[0];
-            if (found.get(i)[1].equals(GameOptions.language(this))) checked = i;
-        }
-        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(tr("Idioma del juego"))
-                .setSingleChoiceItems(names, checked, (dialog, which) -> {
-                    GameOptions.prefs(this).edit().putString(GameOptions.LANGUAGE, found.get(which)[1]).apply();
-                    dialog.dismiss(); refreshOptions();
-                }).setNegativeButton(tr("Cancelar"), null).show();
-    }
+    private String tr(String text, Object... args) { return Lang.t(this, text, args); }
 
     private void chooseOption(GameOptions.Option option) {
         String current = GameOptions.get(this, option.key);
@@ -328,59 +468,33 @@ public final class LauncherActivity extends Activity {
                 .setSingleChoiceItems(Lang.t(this, option.labels), checked, (dialog, which) -> {
                     GameOptions.set(this, option.key, option.values[which]);
                     dialog.dismiss(); refreshOptions();
-                }).setNegativeButton(tr("Cancelar"), null).show();
-    }
-
-    private void chooseOnlineServer() {
-        android.widget.EditText input = new android.widget.EditText(this);
-        input.setSingleLine(true);
-        input.setText(GameOptions.onlineServer(this));
-        input.setSelection(input.getText().length());
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        android.widget.FrameLayout box = new android.widget.FrameLayout(this);
-        int pad = (int) (20 * getResources().getDisplayMetrics().density);
-        box.setPadding(pad, pad / 2, pad, 0);
-        box.addView(input);
-        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(tr("Servidor online"))
-                .setMessage(tr("El modo online del juego (EA Nation) se conecta a este servidor de la comunidad en lugar de los servidores de EA, ya cerrados."))
-                .setView(box)
-                .setPositiveButton(tr("Guardar"), (dialog, which) -> {
-                    String value = input.getText().toString().trim();
-                    if (!GameOptions.validServer(value)) { message(tr("Servidor online"), tr("\"%s\" no es un nombre de servidor válido.", value)); return; }
-                    GameOptions.prefs(this).edit().putString(GameOptions.ONLINE_SERVER, value).apply();
-                    refreshOptions();
-                })
-                .setNeutralButton(tr("Restaurar"), (dialog, which) -> {
-                    GameOptions.prefs(this).edit().remove(GameOptions.ONLINE_SERVER).apply();
-                    refreshOptions();
-                })
-                .setNegativeButton(tr("Cancelar"), null).show();
+                }).setNegativeButton(tr("Cancel"), null).show();
     }
 
     private void chooseDriver() {
         List<GpuDrivers.Driver> drivers = GpuDrivers.list(this);
         String[] names = new String[drivers.size() + 1];
-        names[0] = tr("Driver del sistema");
+        names[0] = tr("System driver");
         int selected = 0;
         for (int i = 0; i < drivers.size(); ++i) {
             names[i + 1] = drivers.get(i).name;
             if (drivers.get(i).id.equals(GpuDrivers.selectedId(this))) selected = i + 1;
         }
-        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(tr("Driver Vulkan"))
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(tr("Vulkan driver"))
                 .setSingleChoiceItems(names, selected, (dialog, which) -> {
                     GpuDrivers.select(this, which == 0 ? "" : drivers.get(which - 1).id);
                     refreshOptions(); dialog.dismiss();
                 })
-                .setPositiveButton(tr("Importar ZIP"), (dialog, which) -> startActivityForResult(
+                .setPositiveButton(tr("Import ZIP"), (dialog, which) -> startActivityForResult(
                         new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),
                         REQUEST_DRIVER_ZIP))
-                .setNeutralButton(tr("Eliminar seleccionado"), (dialog, which) -> {
+                .setNeutralButton(tr("Delete selected"), (dialog, which) -> {
                     GpuDrivers.Driver driver = GpuDrivers.selected(this);
                     if (driver == null) return;
                     try { GpuDrivers.remove(this, driver); refreshOptions(); }
-                    catch (java.io.IOException error) { message(tr("Driver Vulkan"), error.getMessage()); }
+                    catch (java.io.IOException error) { message(tr("Vulkan driver"), error.getMessage()); }
                 })
-                .setNegativeButton(tr("Volver"), null).show();
+                .setNegativeButton(tr("Back"), null).show();
     }
 
     private void probeDriver(boolean thenPlay) {
@@ -399,39 +513,39 @@ public final class LauncherActivity extends Activity {
             // probe checks may still run the game (issue #1107), so offer it.
             boolean wantedToPlay = playAfterProbe && !failed;
             playAfterProbe = false;
-            String text = failed ? tr("No se pudo usar el driver: %s", gpu.optString("probeError", tr("error al iniciar Vulkan.")))
+            String text = failed ? tr("The driver could not be used: %s", gpu.optString("probeError", tr("Vulkan failed to start.")))
                     : "GPU: " + gpu.optString("gpu") + "\nVulkan: " + gpu.optString("vulkan")
                       + "\nDriver: " + gpu.optString("driverName", "—") + " " + gpu.optString("driverInfo", "")
-                      + "\n" + tr("Texturas BC: ") + (gpu.optBoolean("bcTextures") ? tr("en la GPU") : tr("se convierten en la CPU"))
+                      + "\n" + tr("BC textures: ") + (gpu.optBoolean("bcTextures") ? tr("on the GPU") : tr("converted on the CPU"))
                       + (gpu.optString("vertexFormatsMissing").isEmpty() ? ""
-                              : "\n" + tr("Tipos de vértice sin soporte: ") + gpu.optString("vertexFormatsMissing"))
-                      + "\n" + (gpu.optBoolean("compatible") ? tr("Compatible con el juego.")
-                              : tr("Faltan funciones: ") + gpu.optJSONArray("missing"));
+                              : "\n" + tr("Unsupported vertex types: ") + gpu.optString("vertexFormatsMissing"))
+                      + "\n" + (gpu.optBoolean("compatible") ? tr("Compatible with the game.")
+                              : tr("Missing features: ") + gpu.optJSONArray("missing"));
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle(tr("Prueba del driver Vulkan")).setMessage(text).setPositiveButton(tr("Aceptar"), null)
-                    .setNeutralButton(tr("Usar driver del sistema"), (dialog, which) -> { GpuDrivers.select(this, ""); refreshOptions(); })
-                    .setNegativeButton(wantedToPlay ? tr("Jugar igualmente") : null, wantedToPlay ? (dialog, which) -> launch() : null)
+                    .setTitle(tr("Vulkan driver test")).setMessage(text).setPositiveButton(tr("OK"), null)
+                    .setNeutralButton(tr("Use system driver"), (dialog, which) -> { GpuDrivers.select(this, ""); refreshOptions(); })
+                    .setNegativeButton(wantedToPlay ? tr("Play anyway") : null, wantedToPlay ? (dialog, which) -> launch() : null)
                     .show();
-        } catch (Exception error) { message(tr("Prueba del driver Vulkan"), tr("Diagnóstico no válido: ") + error.getMessage()); }
+        } catch (Exception error) { message(tr("Vulkan driver test"), tr("Invalid diagnostics: ") + error.getMessage()); }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_DRIVER_PROBE) {
             showDriverReport(resultCode == RESULT_OK && data != null ? data.getStringExtra("gpu_report")
-                    : "{\"probeError\":\"" + tr("La prueba se cerró o fue cancelada.") + "\",\"driverLoadFailed\":true}");
+                    : "{\"probeError\":\"" + tr("The test closed or was cancelled.") + "\",\"driverLoadFailed\":true}");
         } else if (requestCode == REQUEST_DRIVER_ZIP && resultCode == RESULT_OK && data != null && data.getData() != null) {
             Uri zip = data.getData();
-            status.setText(tr("Importando driver Vulkan…"));
+            status.setText(tr("Importing Vulkan driver…"));
             worker.execute(() -> {
                 try {
                     GpuDrivers.Driver driver = GpuDrivers.importZip(this, zip);
                     main.post(() -> {
                         GpuDrivers.select(this, driver.id); refresh();
-                        status.setText(tr("Driver importado: %s. Usa Probar driver para comprobarlo.", driver.name));
+                        status.setText(tr("Driver imported: %s. Use Test driver to check it.", driver.name));
                     });
                 } catch (Exception error) {
-                    main.post(() -> { refresh(); message(tr("Driver Vulkan"), tr("No se pudo importar el driver: ") + error.getMessage()); });
+                    main.post(() -> { refresh(); message(tr("Vulkan driver"), tr("Could not import the driver: ") + error.getMessage()); });
                 }
             });
         }
@@ -447,19 +561,19 @@ public final class LauncherActivity extends Activity {
             checkingUpdates = false;
             if (isFinishing() || isDestroyed()) return;
             refreshOptions();
-            if (result.error != null) { if (manual) message(tr("Actualizaciones"), result.error); return; }
+            if (result.error != null) { if (manual) message(tr("Updates"), result.error); return; }
             if (!ReleaseVersion.newer(result.tag, ReleaseUpdates.installed(this))) {
-                if (manual) message(tr("Actualizaciones"), tr("Tienes la versión %s. No hay una versión más reciente en GitHub.", ReleaseUpdates.installed(this)));
+                if (manual) message(tr("Updates"), tr("You have version %s. There is no newer version on GitHub.", ReleaseUpdates.installed(this)));
                 return;
             }
             android.content.SharedPreferences updates = ReleaseUpdates.prefs(this);
             if (!manual && result.tag.equals(updates.getString("notified_tag", ""))) return;
             updates.edit().putString("notified_tag", result.tag).apply();
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle(tr("Nueva versión disponible: %s", result.tag))
-                    .setMessage(tr("Puedes descargarla desde GitHub o seguir jugando con esta versión. Instala el APK encima del actual para conservar tus partidas y ajustes."))
-                    .setPositiveButton(tr("Actualizar"), (dialog, which) -> openUrl(Uri.parse(result.url)))
-                    .setNegativeButton(tr("Más tarde"), null).show();
+                    .setTitle(tr("New version available: %s", result.tag))
+                    .setMessage(tr("You can download it from GitHub or keep playing this version. Install the APK over the current one to keep your saves and settings."))
+                    .setPositiveButton(tr("Update"), (dialog, which) -> openUrl(Uri.parse(result.url)))
+                    .setNegativeButton(tr("Later"), null).show();
         });
     }
 
@@ -469,7 +583,7 @@ public final class LauncherActivity extends Activity {
      * and the player is told where the ZIP is to attach it.
      */
     private void prepareReport(String crash) {
-        status.setText(tr("Preparando el registro…"));
+        status.setText(tr("Preparing the log…"));
         worker.execute(() -> {
             try {
                 File report = Diagnostics.createReport(this);
@@ -478,20 +592,20 @@ public final class LauncherActivity extends Activity {
                 main.post(() -> {
                     refresh();
                     new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setTitle(tr("Reportar en GitHub"))
-                            .setMessage(tr("El registro completo se ha guardado en:\n%s\n\nSe abrirá la issue en GitHub con un resumen técnico ya escrito. Describe qué pasó y, si puedes, adjunta ese ZIP (GitHub no permite adjuntarlo automáticamente).", location))
-                            .setPositiveButton(tr("Abrir GitHub"), (dialog, which) -> openUrl(issue))
-                            .setNegativeButton(tr("Cancelar"), null).show();
+                            .setTitle(tr("Report on GitHub"))
+                            .setMessage(tr("The full log was saved to:\n%s\n\nA GitHub issue will open with a technical summary already written. Describe what happened and, if you can, attach that ZIP (GitHub does not allow attaching it automatically).", location))
+                            .setPositiveButton(tr("Open GitHub"), (dialog, which) -> openUrl(issue))
+                            .setNegativeButton(tr("Cancel"), null).show();
                 });
             } catch (Exception error) {
-                main.post(() -> { refresh(); message(tr("Reportar un problema"), tr("No se pudo preparar el registro: ") + error.getMessage()); });
+                main.post(() -> { refresh(); message(tr("Report a problem"), tr("Could not prepare the log: ") + error.getMessage()); });
             }
         });
     }
 
     private void openUrl(Uri uri) {
         try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
-        catch (android.content.ActivityNotFoundException error) { message("GitHub", tr("No hay un navegador para abrir %s", uri)); }
+        catch (android.content.ActivityNotFoundException error) { message("GitHub", tr("No browser available to open %s", uri)); }
     }
 
     // ---- Launch ----------------------------------------------------------------------------------------
@@ -522,7 +636,6 @@ public final class LauncherActivity extends Activity {
                 .putExtra("backBuffers", Integer.parseInt(GameOptions.get(this, GameOptions.LATENCY)))
                 .putExtra("cpuTextures", GameOptions.get(this, GameOptions.TEXTURES).equals("cpu"))
                 .putExtra("padJoystick", GameOptions.get(this, GameOptions.GAMEPAD).equals("directinput"))
-                .putExtra("onlineServer", GameOptions.onlineServer(this))
                 .putExtra("driverLoader", loader));
     }
 
@@ -554,77 +667,116 @@ public final class LauncherActivity extends Activity {
 
     // ---- Widgets ---------------------------------------------------------------------------------------
 
-    private void addCheck(String name, boolean ok, boolean required) {
-        TextView row = label((ok ? "✓  " : required ? "✗  " : "!  ") + name + (ok || required ? "" : tr(" · opcional")), 13,
-                ok ? 0xFF7CD992 : required ? 0xFFFF6B6B : 0xFFFFC857, false);
+    private LinearLayout panel(String title) {
+        LinearLayout panel = vertical();
+        panel.setPadding(dp(22), dp(18), dp(22), dp(18));
+        panel.addView(text(title, 24, TEXT, fontBlack));
+        View underline = new View(this);
+        underline.setBackgroundColor(AMBER);
+        panel.addView(underline, new LinearLayout.LayoutParams(dp(48), dp(3)) {{ topMargin = dp(4); }});
+        return panel;
+    }
+
+    private LinearLayout vertical() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        return layout;
+    }
+
+    private void addCheck(LinearLayout list, String name, boolean ok) {
+        TextView row = text((ok ? "\u2713  " : "\u2717  ") + name, 14, ok ? OK : BAD, fontBold);
         row.setPadding(0, dp(2), 0, dp(2));
-        checksList.addView(row);
+        list.addView(row);
     }
 
     private View optionRow(String title, String value, Runnable onClick) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(8), dp(12), dp(8));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0x16FF7A1A);
-        bg.setCornerRadius(dp(10));
-        row.setBackground(bg);
+        row.setPadding(dp(14), dp(10), dp(14), dp(10));
+        row.setBackground(focusBackground(0x14FFFFFF));
+        row.setFocusable(true);
         row.setClickable(true);
         row.setOnClickListener(v -> onClick.run());
-        row.addView(label(title, 14, Color.WHITE, false), new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView current = label(value + "  ›", 13, ACCENT, true);
+        row.addView(text(title, 15, TEXT, fontBold), new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView current = text(value + "  \u203A", 14, AMBER, fontBlack);
         current.setGravity(Gravity.END);
         row.addView(current, new LinearLayout.LayoutParams(0, -2, 1f));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(5);
+        lp.topMargin = dp(6);
         row.setLayoutParams(lp);
         return row;
     }
 
-    private LinearLayout card() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(12), dp(16), dp(12));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xCC1C0D08);
-        bg.setCornerRadius(dp(16));
-        bg.setStroke(dp(1), 0x44FF7A1A);
-        card.setBackground(bg);
-        return card;
+    private TextView button(String label, boolean primary, Runnable onClick) {
+        TextView button = text(label, 15, primary ? AMBER_DARK : TEXT, fontBlack);
+        button.setGravity(Gravity.CENTER);
+        button.setBackground(focusBackground(primary ? AMBER : 0x22FFFFFF));
+        button.setFocusable(true);
+        button.setClickable(true);
+        button.setOnClickListener(v -> onClick.run());
+        return button;
     }
 
-    private Button actionButton(String text, boolean primary) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setAllCaps(false);
-        b.setTextColor(primary ? 0xFF1F0802 : Color.WHITE);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, primary ? 22 : 15);
-        b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setLetterSpacing(primary ? .12f : 0f);
-        GradientDrawable bg = primary
-                ? new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[] {0xFFFFB13D, 0xFFE3261B})
-                : new GradientDrawable();
-        if (!primary) { bg.setColor(0x22FFFFFF); bg.setStroke(dp(1), 0x55FFFFFF); }
-        bg.setCornerRadius(dp(14));
-        b.setBackground(bg);
-        b.setStateListAnimator(null);
-        return b;
+    /** Fill, with a white outline while focused (controller) and a lighter fill while pressed. */
+    private Drawable focusBackground(int fill) {
+        GradientDrawable normal = rounded(fill, dp(12));
+        GradientDrawable focused = rounded(fill == Color.TRANSPARENT ? 0x14FFFFFF : fill, dp(12));
+        focused.setStroke(dp(2), 0xFFFFFFFF);
+        GradientDrawable pressed = rounded(fill == Color.TRANSPARENT ? 0x33FFFFFF : fill, dp(12));
+        pressed.setStroke(dp(3), AMBER);
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] {android.R.attr.state_pressed}, pressed);
+        states.addState(new int[] {android.R.attr.state_focused}, focused);
+        states.addState(new int[] {}, normal);
+        return states;
     }
 
-    private TextView label(String text, int sp, int color, boolean bold) {
-        if (text == null) text = "";
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
-        t.setTextColor(color);
-        if (bold) { t.setTypeface(Typeface.DEFAULT_BOLD); t.setLetterSpacing(.06f); }
-        return t;
+    /** Amber tint with a bar on the left; an amber outline while focused. */
+    private Drawable menuSelectedBackground() {
+        StateListDrawable states = new StateListDrawable();
+        for (boolean focused : new boolean[] {true, false}) {
+            GradientDrawable fill = rounded(AMBER_TINT, dp(10));
+            if (focused) fill.setStroke(dp(2), AMBER);
+            LayerDrawable layers = new LayerDrawable(new Drawable[] {fill, rounded(AMBER, dp(2))});
+            layers.setLayerGravity(1, Gravity.LEFT | Gravity.FILL_VERTICAL);
+            layers.setLayerWidth(1, dp(5));
+            states.addState(focused ? new int[] {android.R.attr.state_focused} : new int[] {}, layers);
+        }
+        return states;
+    }
+
+    private static GradientDrawable rounded(int fill, int radius) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setCornerRadius(radius);
+        return drawable;
+    }
+
+    private TextView text(String value, float sp, int color, Typeface typeface) {
+        TextView view = new TextView(this);
+        view.setText(value == null ? "" : value);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp * UI_SCALE);
+        view.setTextColor(color);
+        if (typeface != null) view.setTypeface(typeface);
+        return view;
+    }
+
+    private LinearLayout.LayoutParams withTop(int top) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = top;
+        return params;
+    }
+
+    private LinearLayout.LayoutParams sized(int height, int top) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, height);
+        params.topMargin = top;
+        return params;
     }
 
     private void message(String title, String text) {
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle(title).setMessage(text).setPositiveButton(tr("Aceptar"), null).show();
+                .setTitle(title).setMessage(text).setPositiveButton("OK", null).show();
     }
 
-    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    private int dp(int value) { return Math.round(value * UI_SCALE * getResources().getDisplayMetrics().density); }
 }

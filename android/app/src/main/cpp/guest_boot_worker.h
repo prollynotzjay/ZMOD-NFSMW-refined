@@ -20,7 +20,7 @@ public:
     void start(const std::string& executable) {
         if(started_)return;
         executable_=executable;
-        {std::lock_guard<std::mutex> guard(mutex_);status_="Ejecutando entrada CRT del juego…";}
+        {std::lock_guard<std::mutex> guard(mutex_);status_="Starting the game (CRT entry)…";}
         pthread_attr_t attributes;
         if(pthread_attr_init(&attributes))throw std::runtime_error("Guest thread attributes failed");
         int result=pthread_attr_setstacksize(&attributes,64u<<20);

@@ -3,8 +3,9 @@
 // call waits in short poll slices with the machine released so other guest
 // threads keep running and cancellation stays immediate.
 //
-// gethostbyname also carries the community-server redirect (what the PC
-// "eanationhub.asi" mod does): any *.ea.com name resolves onlineServer instead.
+// NFSMW Refined has no online mode: *.ea.com names never resolve, so EA Nation
+// fails the way it does on the original PC game now that EA's servers are gone.
+// LAN play (local sockets and broadcasts) is untouched.
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <net/if.h>
@@ -15,7 +16,6 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
-std::string onlineServer="eahub.eu";
 std::array<uint8_t,6> guestNetworkMac{0x02,0x4e,0,0,0,1};
 namespace net {
 constexpr uint32_t socketError=0xffffffffu,invalidSocket=0xffffffffu;
@@ -180,7 +180,7 @@ void wsaStartup(){
     std::strcpy(static_cast<char*>(ptr(data+261,8)),"Running");
     uint16_t maxSockets=1024,maxDatagram=65467;std::memcpy(ptr(data+390,2),&maxSockets,2);std::memcpy(ptr(data+392,2),&maxDatagram,2);
     ++net::startups;
-    NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Winsock: WSAStartup %04x; EA Nation hosts resolve via %s",requested,onlineServer.c_str());
+    NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Winsock: WSAStartup %04x; online (EA Nation) disabled",requested);
     ret(0,2);
 }
 void wsaCleanup(){
@@ -195,7 +195,7 @@ void socketCreate(){
     if(family==AF_INET&&type==3&&protocol==1){  // SOCK_RAW + IPPROTO_ICMP: ping
         int fd=::socket(AF_INET,SOCK_DGRAM|SOCK_NONBLOCK|SOCK_CLOEXEC,IPPROTO_ICMP);
         if(fd<0){
-            NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Winsock: ping ICMP no permitido por Android: %s",std::strerror(errno));
+            NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Winsock: ICMP ping not allowed by Android: %s",std::strerror(errno));
             lastError=10013;ret(net::invalidSocket,3);return;  // WSAEACCES, as for a non-admin raw socket on Windows
         }
         uint32_t handle=net::newHandle(fd,false);net::sockets[handle].icmp=true;
@@ -203,7 +203,7 @@ void socketCreate(){
         ret(handle,3);return;
     }
     if(family!=AF_INET||(type!=SOCK_STREAM&&type!=SOCK_DGRAM))
-        NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Winsock: socket(af=%u,type=%u,protocol=%u) no soportado desde %08x",family,type,protocol,read32(g_esp));
+        NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Winsock: socket(af=%u,type=%u,protocol=%u) not supported, from %08x",family,type,protocol,read32(g_esp));
     if(family!=AF_INET){lastError=net::wsaEafnosupport;ret(net::invalidSocket,3);return;}
     if(type!=SOCK_STREAM&&type!=SOCK_DGRAM){lastError=10044;ret(net::invalidSocket,3);return;}  // WSAESOCKTNOSUPPORT
     int fd=::socket(AF_INET,int(type)|SOCK_NONBLOCK|SOCK_CLOEXEC,int(protocol));
@@ -475,12 +475,15 @@ void hostByName(){
     if(net::localName(name))addresses=net::interfaceAddresses(name=="localhost");
     else{
         std::string lookup=name;
-        if(name=="ea.com"||net::endsWith(name,".ea.com"))lookup=onlineServer;
+        if(name=="ea.com"||net::endsWith(name,".ea.com")){
+            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Winsock: %s blocked (online mode removed)",requested.c_str());
+            lastError=net::wsaHostNotFound;ret(0,1);return;
+        }
         addrinfo hints{};hints.ai_family=AF_INET;hints.ai_socktype=SOCK_STREAM;
         addrinfo* result=nullptr;
         int status=net::released([&]{return ::getaddrinfo(lookup.c_str(),nullptr,&hints,&result);});
         if(status){
-            NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Winsock: %s -> %s no resuelve (%s)",requested.c_str(),lookup.c_str(),gai_strerror(status));
+            NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSMW","Winsock: %s -> %s does not resolve (%s)",requested.c_str(),lookup.c_str(),gai_strerror(status));
             lastError=status==EAI_AGAIN?11002:status==EAI_NONAME?net::wsaHostNotFound:net::wsaNoData;ret(0,1);return;
         }
         for(auto* entry=result;entry&&addresses.size()<8;entry=entry->ai_next){
