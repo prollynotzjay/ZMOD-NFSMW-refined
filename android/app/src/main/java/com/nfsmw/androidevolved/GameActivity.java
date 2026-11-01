@@ -37,60 +37,69 @@ public final class GameActivity extends NativeActivity {
     private Runnable statusHideTask;
     private static native void nativeKey(int scan, boolean down);
     private static native boolean nativeDrivingControls();
+    private static native int nativeGameState();
+    private static native void nativeVirtualSteer(float steer);
     private static native boolean nativeGamepadUsed();
     private final boolean[] touchKeys=new boolean[256],sentKeys=new boolean[256];
-    private boolean tiltLeft,tiltRight,tiltEnabled,tiltCalibrate=true;
-    private float tiltFiltered,tiltNeutral,tiltSensitivity=1;
-    private boolean tiltInvert;
+    private boolean tiltLeft,tiltRight;
     private boolean padJoystick;
-    private android.hardware.SensorManager tiltSensors;
-    private android.hardware.Sensor tiltSensor;
-    private final android.hardware.SensorEventListener tiltListener=new android.hardware.SensorEventListener() {
-        @Override public void onAccuracyChanged(android.hardware.Sensor sensor,int accuracy) {}
-        @Override public void onSensorChanged(android.hardware.SensorEvent event) {
-            int rotation=getWindowManager().getDefaultDisplay().getRotation();
-            float horizontal=rotation==android.view.Surface.ROTATION_90?-event.values[1]:
-                    rotation==android.view.Surface.ROTATION_270?event.values[1]:event.values[0];
-            if(tiltCalibrate) {tiltNeutral=horizontal;tiltFiltered=horizontal;tiltCalibrate=false;}
-            tiltFiltered+=.2f*(horizontal-tiltFiltered);
-            float turn=(tiltFiltered-tiltNeutral)*tiltSensitivity*(tiltInvert?-1:1);
-            if(!foreground||!hasWindowFocus()||!tiltEnabled||touchControls==null||!touchControls.isDriving()) {setTiltKeys(false,false);return;}
-            setTiltKeys(turn<-(tiltLeft?.5f:.8f),turn>(tiltRight?.5f:.8f));
-        }
-    };
+    private android.hardware.input.InputManager inputManager;
+    private GyroSteering gyro;
+    private float pwmAccumulator;
     private void sendCombinedKey(int scan) {
         boolean held=touchKeys[scan]||(scan==0xcb&&tiltLeft)||(scan==0xcd&&tiltRight);
         if(sentKeys[scan]!=held) {sentKeys[scan]=held;nativeKey(scan,held);}
     }
     private void setTouchKey(int scan,boolean down) {touchKeys[scan]=down;sendCombinedKey(scan);}
     private void setTiltKeys(boolean left,boolean right) {tiltLeft=left;tiltRight=right;sendCombinedKey(0xcb);sendCombinedKey(0xcd);}
-    private void updateTiltSensor() {
-        if(tiltSensors==null)return;tiltSensors.unregisterListener(tiltListener);setTiltKeys(false,false);
-        if(foreground&&tiltEnabled&&tiltSensor!=null) {
-            tiltCalibrate=true;tiltSensors.registerListener(tiltListener,tiltSensor,android.hardware.SensorManager.SENSOR_DELAY_GAME);
+    private android.content.SharedPreferences controlPrefs() {return getSharedPreferences("touch_layouts_v1",MODE_PRIVATE);}
+    /** PS3-style output: the gyro drives the left stick of a virtual pad (applies from the next launch). */
+    private boolean gyroPadWanted() {
+        return controlPrefs().getBoolean("gyro.pad",false)&&RacingControlsView.GYRO.equals(RacingControlsView.readScheme(this));
+    }
+    /** Gyro value -1..1 to the game: the virtual pad's stick, or key pulses whose width follows the value. */
+    private void onGyroSteer(float value) {
+        boolean active=foreground&&hasWindowFocus()&&touchControls!=null&&touchControls.gyroActive();
+        if(!active) {
+            if(gyroPadWanted())nativeVirtualSteer(0);
+            setTiltKeys(false,false);pwmAccumulator=0;return;
         }
+        if(gyroPadWanted()) {nativeVirtualSteer(value);return;}
+        float magnitude=Math.abs(value);
+        if(magnitude>.92f) {setTiltKeys(value<0,value>0);return;}
+        pwmAccumulator+=magnitude;
+        boolean pulse=pwmAccumulator>=1f;if(pulse)pwmAccumulator-=1f;
+        setTiltKeys(pulse&&value<0,pulse&&value>0);
     }
-    private void showTiltOptions() {
-        if(tiltSensor==null) {Toast.makeText(this,tr("This device has no accelerometer"),Toast.LENGTH_LONG).show();return;}
-        android.content.SharedPreferences options=getSharedPreferences("touch_layouts_v1",MODE_PRIVATE);
+    private void updateGyro() {
+        if(gyro==null)return;
+        android.content.SharedPreferences prefs=controlPrefs();
+        gyro.configure(prefs.getFloat("gyro.range",30f),prefs.getBoolean("gyro.invert",false));
+        gyro.setActive(foreground&&RacingControlsView.GYRO.equals(RacingControlsView.readScheme(this)));
+        if(!RacingControlsView.GYRO.equals(RacingControlsView.readScheme(this)))setTiltKeys(false,false);
+    }
+    private void showGyroOptions() {
+        if(gyro==null||!gyro.available()) {Toast.makeText(this,tr("This device has no gyroscope"),Toast.LENGTH_LONG).show();return;}
+        android.content.SharedPreferences prefs=controlPrefs();
         LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(24),dp(8),dp(24),dp(8));
-        CheckBox enabled=new CheckBox(this);enabled.setText(tr("Steer by tilting the phone"));enabled.setChecked(tiltEnabled);form.addView(enabled);
-        CheckBox invert=new CheckBox(this);invert.setText(tr("Invert direction"));invert.setChecked(tiltInvert);form.addView(invert);
-        TextView label=new TextView(this);label.setText(tr("Sensitivity: %s×",tiltSensitivity));form.addView(label);
-        android.widget.SeekBar sensitivity=new android.widget.SeekBar(this);sensitivity.setMax(30);sensitivity.setProgress(Math.round(tiltSensitivity*10)-10);form.addView(sensitivity);
-        sensitivity.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
-            public void onStartTrackingTouch(android.widget.SeekBar bar) {}public void onStopTrackingTouch(android.widget.SeekBar bar) {}
-            public void onProgressChanged(android.widget.SeekBar bar,int progress,boolean user) {label.setText(tr("Sensitivity: %s×",(progress+10)/10f));}
+        CheckBox invert=new CheckBox(this);invert.setText(tr("Invert direction"));invert.setChecked(prefs.getBoolean("gyro.invert",false));form.addView(invert);
+        TextView label=new TextView(this);form.addView(label);
+        android.widget.SeekBar range=new android.widget.SeekBar(this);range.setMax(45);range.setProgress(Math.round(prefs.getFloat("gyro.range",30f))-15);form.addView(range);
+        label.setText(tr("Turn for full lock: %d°",range.getProgress()+15));
+        range.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar bar,int value,boolean user) {label.setText(tr("Turn for full lock: %d°",value+15));}
+            @Override public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar bar) {}
         });
-        TextView help=new TextView(this);help.setText(tr("Hold the phone in your playing position when applying. Tilting steers left/right; the pedals stay on the touch screen."));form.addView(help);
-        new AlertDialog.Builder(this).setTitle(tr("Tilt steering")).setView(form)
-                .setPositiveButton(tr("Apply and calibrate"),(dialog,which)->{
-                    tiltEnabled=enabled.isChecked();tiltInvert=invert.isChecked();tiltSensitivity=(sensitivity.getProgress()+10)/10f;
-                    options.edit().putBoolean("tilt.enabled",tiltEnabled).putBoolean("tilt.invert",tiltInvert).putFloat("tilt.sensitivity",tiltSensitivity).apply();
-                    updateTiltSensor();
-                }).setNegativeButton(tr("Cancel"),null).show();
+        CheckBox pad=new CheckBox(this);pad.setText(tr("PS3 pad emulation: analog stick (experimental, next launch)"));pad.setChecked(prefs.getBoolean("gyro.pad",false));form.addView(pad);
+        TextView help=new TextView(this);help.setText(tr("Hold the phone like a wheel. It recalibrates to your position when a race starts. Smaller angle = more sensitive. The pedals stay on the touch screen or are automatic."));form.addView(help);
+        new AlertDialog.Builder(this).setTitle(tr("Gyro steering")).setView(form)
+                .setPositiveButton(tr("Apply"),(dialog,which)->{
+                    prefs.edit().putBoolean("gyro.invert",invert.isChecked()).putFloat("gyro.range",range.getProgress()+15f).putBoolean("gyro.pad",pad.isChecked()).apply();
+                    updateGyro();gyro.recalibrate();
+                }).setNeutralButton(tr("Recalibrate"),(dialog,which)->{if(gyro!=null)gyro.recalibrate();})
+                .setNegativeButton(tr("Cancel"),null).show();
     }
-    private android.hardware.input.InputManager inputManager;
     private final android.hardware.input.InputManager.InputDeviceListener gamepadListener=new android.hardware.input.InputManager.InputDeviceListener() {
         @Override public void onInputDeviceAdded(int id) {updateGamepads();}
         @Override public void onInputDeviceRemoved(int id) {updateGamepads();}
@@ -130,12 +139,13 @@ public final class GameActivity extends NativeActivity {
         if(touchControls!=null)touchControls.setGamepadConnected(connected);
         // The DirectInput joystick is optional (launcher): by default the pad is
         // folded into the keyboard keys the game already uses.
-        nativeGamepadConnected(connected&&padJoystick);
+        nativeGamepadConnected((connected&&padJoystick)||gyroPadWanted());
     }
     private final Runnable updateControlMode = new Runnable() {
         @Override public void run() {
             if(!foreground||touchControls==null)return;
-            touchControls.setGameMode(nativeDrivingControls());
+            touchControls.setGameState(nativeGameState());
+            if(touchControls.takeRaceStarted()&&gyro!=null)gyro.recalibrate();
             // Playing on with the pad after a touch revealed the controls hides them again.
             if(nativeGamepadUsed())touchControls.gamepadUsed();
             touchControls.postDelayed(this,250);
@@ -210,11 +220,7 @@ public final class GameActivity extends NativeActivity {
         nativeNetworkIdentity(identity);
         super.onCreate(saved);
         inputManager=(android.hardware.input.InputManager)getSystemService(INPUT_SERVICE);
-        tiltSensors=(android.hardware.SensorManager)getSystemService(SENSOR_SERVICE);
-        tiltSensor=tiltSensors==null?null:tiltSensors.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER);
-        android.content.SharedPreferences options=getSharedPreferences("touch_layouts_v1",MODE_PRIVATE);
-        tiltEnabled=options.getBoolean("tilt.enabled",false);tiltInvert=options.getBoolean("tilt.invert",false);
-        tiltSensitivity=options.getFloat("tilt.sensitivity",1);
+        gyro=new GyroSteering(this,this::onGyroSteer);
         getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         android.view.Display display=getWindowManager().getDefaultDisplay();
         android.view.Display.Mode current=display.getMode();float refresh=60;
@@ -251,7 +257,7 @@ public final class GameActivity extends NativeActivity {
         statusWindow = new PopupWindow(status, ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, false);
         statusWindow.setTouchable(false);
-        touchControls = new RacingControlsView(this, this::setTouchKey, this::showTextInput,this::showTiltOptions,this::showFrameLimitOptions);
+        touchControls = new RacingControlsView(this, this::setTouchKey, this::showTextInput,this::showGyroOptions,this::showFrameLimitOptions,this::updateGyro);
         touchControls.setPointer(GameActivity::nativePointer);
         controlsWindow = new PopupWindow(touchControls, ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT, false);
@@ -309,7 +315,7 @@ public final class GameActivity extends NativeActivity {
     @Override protected void onPause() {
         foreground=false;
         holdLanBroadcasts(false);
-        updateTiltSensor();
+        updateGyro();
         if(inputManager!=null)inputManager.unregisterInputDeviceListener(gamepadListener);
         if (statusWindow != null) statusWindow.dismiss();
         if (touchControls != null) {touchControls.removeCallbacks(updateControlMode);touchControls.releaseAll();}
@@ -320,7 +326,7 @@ public final class GameActivity extends NativeActivity {
         super.onResume();
         foreground=true;
         holdLanBroadcasts(true);
-        updateTiltSensor();
+        updateGyro();
         if(inputManager!=null){inputManager.registerInputDeviceListener(gamepadListener,null);updateGamepads();}
         if(touchControls!=null) {touchControls.removeCallbacks(updateControlMode);touchControls.post(updateControlMode);}
         boolean allowed = Build.VERSION.SDK_INT >= 30

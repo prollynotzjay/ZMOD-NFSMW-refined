@@ -48,6 +48,23 @@ final class GameOptions {
                     new String[] {"As keyboard · compatible", "DirectInput joystick · analog, experimental"}),
     };
 
+    /** One-tap bundles of the options above. Burnout smoke is fill-rate heavy, so a lower resolution helps most. */
+    static final String[] PRESET_NAMES = {
+            "Battery saver · 360p, 30 FPS", "Low-end phones · 480p, 30 FPS", "Balanced · 720p, 60 FPS",
+            "Quality · native resolution, 60 FPS", "Maximum · native resolution, 120 FPS"};
+    private static final String[][] PRESETS = {
+            {"360", "30"}, {"480", "30"}, {"720", "60"}, {"100", "60"}, {"100", "120"}};
+
+    static void applyPreset(Context context, int index) {
+        set(context, RESOLUTION, PRESETS[index][0]);
+        set(context, FPS, PRESETS[index][1]);
+        set(context, LATENCY, "2");
+    }
+
+    static boolean advanced(Context context) { return prefs(context).getBoolean("advanced", false); }
+
+    static void setAdvanced(Context context, boolean on) { prefs(context).edit().putBoolean("advanced", on).apply(); }
+
     private static final String PREFS = "nfsmw_game";
 
     private GameOptions() {}

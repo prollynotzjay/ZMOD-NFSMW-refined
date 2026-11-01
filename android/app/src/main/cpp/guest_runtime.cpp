@@ -834,6 +834,9 @@ void setGuestPaused(bool paused) {
     }
 }
 bool guestDrivingControls() {return inputDrivingMode.load();}
+int guestGameState() {return inputGameState.load();}
+// Gyro steering as a PS3/Xbox-style left stick: only the X axis, the rest of the pad is left alone.
+void setGuestVirtualSteer(float steer){std::lock_guard<std::mutex> lock(inputMutex);inputPad.axis[0]=std::max(-1.f,std::min(1.f,steer));}
 void setGuestPad(const float axes[6],uint32_t buttons,int hatX,int hatY){
     std::lock_guard<std::mutex> lock(inputMutex);
     for(unsigned i=0;i<6;++i)inputPad.axis[i]=std::max(-1.f,std::min(1.f,axes[i]));

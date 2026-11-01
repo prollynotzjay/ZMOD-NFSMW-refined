@@ -66,6 +66,7 @@ public final class LauncherActivity extends Activity {
     private View play, access;
     private Typeface fontBold, fontBlack, fontTag;
     private boolean playAfterProbe, checkingUpdates, resumed;
+    private int versionTaps;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
 
@@ -205,7 +206,16 @@ public final class LauncherActivity extends Activity {
         banner.setScaleType(ImageView.ScaleType.FIT_START);
         banner.setMaxHeight(getResources().getDisplayMetrics().heightPixels / 5);
         left.addView(banner, new LinearLayout.LayoutParams(-1, -2));
-        left.addView(text(versionLine(), 12, MUTED, fontBold), withTop(dp(6)));
+        TextView version = text(versionLine(), 12, MUTED, fontBold);
+        version.setOnClickListener(v -> {   // tap it 7 times: advanced options, like Android's developer options
+            if (++versionTaps < 7) return;
+            versionTaps = 0;
+            boolean on = !GameOptions.advanced(this);
+            GameOptions.setAdvanced(this, on);
+            android.widget.Toast.makeText(this, on ? "Advanced options on" : "Advanced options off", android.widget.Toast.LENGTH_SHORT).show();
+            refreshOptions();
+        });
+        left.addView(version, withTop(dp(6)));
         for (int i = 0; i < PANEL_NAMES.length; ++i) {
             final int index = i;
             TextView item = text(PANEL_NAMES[i], 21, MENU_GREY, fontBlack);
@@ -405,6 +415,9 @@ public final class LauncherActivity extends Activity {
     private void refreshOptions() {
         if (optionsList == null) return;
         optionsList.removeAllViews();
+        optionsList.addView(optionRow("Performance preset", "Fix FPS drops · tap to choose", this::choosePreset));
+        optionsList.addView(optionRow("Driving controls", RacingControlsView.schemeName(RacingControlsView.readScheme(this)),
+                this::chooseControlScheme));
         for (GameOptions.Option option : GameOptions.ALL)
             optionsList.addView(optionRow(option.title, option.label(GameOptions.get(this, option.key)), () -> chooseOption(option)));
         if (MaliProfile.isMali(this)) {
@@ -413,6 +426,24 @@ public final class LauncherActivity extends Activity {
                 refreshOptions();
                 message("Mali profile", "Settings tuned again for " + MaliProfile.renderer(this) + ".");
             }));
+        }
+
+        if (GameOptions.advanced(this)) {
+            android.content.SharedPreferences controls = getSharedPreferences("touch_layouts_v1", MODE_PRIVATE);
+            optionsList.addView(text("ADVANCED", 13, AMBER, fontBlack), withTop(dp(14)));
+            optionsList.addView(optionRow("Gyro: PS3 pad emulation", controls.getBoolean("gyro.pad", false) ? "On · analog stick" : "Off · smooth keys", () -> {
+                controls.edit().putBoolean("gyro.pad", !controls.getBoolean("gyro.pad", false)).apply();
+                refreshOptions();
+            }));
+            optionsList.addView(optionRow("Reset control layouts", "Back to the default positions", () -> {
+                android.content.SharedPreferences.Editor edit = controls.edit();
+                for (String key : controls.getAll().keySet()) if (key.startsWith("v3.")) edit.remove(key);
+                edit.apply();
+                message("Control layouts", "Every control is back in its default position.");
+            }));
+            optionsList.addView(text("Frame times are written to logcat (tag NFSMW, \"Frame time\") every 120 frames, "
+                    + "with the game state. Capture a burnout and send it with a bug report to see where the FPS goes.",
+                    12, MUTED, fontBold), withTop(dp(8)));
         }
 
         driverList.removeAllViews();
@@ -469,6 +500,27 @@ public final class LauncherActivity extends Activity {
                     GameOptions.set(this, option.key, option.values[which]);
                     dialog.dismiss(); refreshOptions();
                 }).setNegativeButton(tr("Cancel"), null).show();
+    }
+
+    private void choosePreset() {
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Performance preset")
+                .setItems(GameOptions.PRESET_NAMES, (dialog, which) -> { GameOptions.applyPreset(this, which); refreshOptions(); })
+                .setNegativeButton("Cancel", null).show();
+    }
+
+    private void chooseControlScheme() {
+        String[] ids = {RacingControlsView.BUTTONS, RacingControlsView.EDGE, RacingControlsView.GYRO};
+        String[] names = {"Touch buttons · arrows and pedals", "Edge steering · hold the left or right screen edge",
+                "Gyro steering · turn the phone like a wheel"};
+        String current = RacingControlsView.readScheme(this);
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Driving controls")
+                .setSingleChoiceItems(names, java.util.Arrays.asList(ids).indexOf(current), (dialog, which) -> {
+                    getSharedPreferences("touch_layouts_v1", MODE_PRIVATE).edit().putString("scheme", ids[which]).apply();
+                    refreshOptions();
+                    dialog.dismiss();
+                }).setNegativeButton("Cancel", null).show();
     }
 
     private void chooseDriver() {

@@ -225,6 +225,18 @@ struct Renderer {
         VK_CHECK(vkQueueWaitIdle(queue));
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) return false;
         check(result, "present");
+        {   // Frame-time log for finding drops (burnouts): average, worst frame and FPS every 120 frames.
+            static auto last = std::chrono::steady_clock::now();
+            static double sum = 0, worst = 0; static int count = 0;
+            auto now = std::chrono::steady_clock::now();
+            double ms = std::chrono::duration<double, std::milli>(now - last).count();
+            last = now; sum += ms; if (ms > worst) worst = ms;
+            if (++count == 120) {
+                __android_log_print(ANDROID_LOG_INFO, "NFSMW", "Frame time: avg %.1f ms (%.0f FPS), worst %.1f ms, state %d",
+                                    sum / count, 1000.0 * count / sum, worst, guestGameState());
+                sum = 0; worst = 0; count = 0;
+            }
+        }
         if (++presented == 1 || presented % 300 == 0)
             __android_log_print(ANDROID_LOG_INFO, "NFSMW", "Presented frames: %llu", static_cast<unsigned long long>(presented));
         return true;
@@ -312,6 +324,8 @@ extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nat
     __android_log_print(ANDROID_LOG_INFO,"NFSMW","Android touch DIK=%02x down=%d",unsigned(scan),int(down));
 }
 extern "C" JNIEXPORT jboolean JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeDrivingControls(JNIEnv*,jclass){return guestDrivingControls()?JNI_TRUE:JNI_FALSE;}
+extern "C" JNIEXPORT jint JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeGameState(JNIEnv*,jclass){return guestGameState();}
+extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeVirtualSteer(JNIEnv*,jclass,jfloat steer){setGuestVirtualSteer(steer);}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativePointer(JNIEnv*,jclass,jfloat x,jfloat y,jint phase){
     setGuestPointer(x,y,phase);
 }

@@ -6,7 +6,7 @@
 
 **Need for Speed: Most Wanted (2005, PC) running natively on Android**
 
-English only · offline · Mali support · Whole New UI Design
+English only · offline · Mali support · GTA IV-style launcher
 
 By **[prollynotzjay](https://github.com/prollynotzjay)**, based on
 **[codepdbh/nfsmwpc-recompiled](https://github.com/codepdbh/nfsmwpc-recompiled)**
@@ -27,7 +27,7 @@ It is **not** an emulator and **not** a port of the Xbox 360 version.
 | Language | Launcher in Spanish / English / Portuguese, game in any language | **English only**, launcher and game text |
 | Online | EA Nation community server | **Removed**: offline, like the original game today. LAN races still work |
 | GPU | Vulkan, custom Adreno drivers | **Mali profile**: detects Mali GPUs and applies tuned settings |
-| Launcher | Two-column options screen | **New launcher design and layout** in Most Wanted colours |
+| Launcher | Two-column options screen | **GTA IV-style launcher** in Most Wanted colours |
 | App | NFS Most Wanted Android Evolved | **NFSMW Refined**, its own package, installs next to the original |
 
 ## Playing
@@ -46,13 +46,22 @@ The menu on the left works with touch or a controller (**A** select, **B** back,
 
 - **PLAY**: game file checks and the PLAY button.
 - **GAME FILES**: where the files go and what is missing.
-- **GRAPHICS & CONTROLS**: internal resolution, FPS limit, proportional widescreen HUD, minimap position,
+- **GRAPHICS & CONTROLS**: performance presets, driving controls, internal resolution, FPS limit, proportional widescreen HUD, minimap position,
   CPU/GPU latency, compressed textures, gamepad mode and, on Mali, the Mali profile.
 - **DRIVER**: your GPU, the Vulkan driver test and (Adreno only) custom Turnip driver ZIPs.
 - **ABOUT**: credits, updates and bug reports.
 
-In game, the touch controls can be moved, resized and switched to classic, Xbox or PlayStation layouts,
-or replaced by tilt steering or a Bluetooth/USB gamepad.
+In game, pick one of three driving schemes (launcher **Driving controls**, or settings button → Options):
+
+| Scheme | How it works |
+|---|---|
+| **Touch buttons** | Steering arrows bottom-left, pedals at the right edge, nothing over the HUD |
+| **Edge steering** | Hold the left or right screen edge to turn; the accelerator is automatic and braking lifts it |
+| **Gyro steering** | Turn the phone like a wheel (game rotation vector, calibrated when a race starts). Output is smooth key pulses, or a PS3-style analog stick with *PS3 pad emulation* |
+
+The controls follow the game: driving controls in a race, menu controls in the front end and over the pause menu,
+a compact set on the world map, and nothing on loading screens. Every control can be moved and resized, and each
+button has its own icon. A Bluetooth/USB gamepad hides the touch controls while it is used.
 
 ### Mali
 
@@ -109,3 +118,8 @@ work/      (local only) analysis copy, catalog, logs
 
 *Need for Speed* is a trademark of Electronic Arts. This project is not affiliated with EA and includes no
 game files.
+
+### Hidden options
+
+Tap the version line in the launcher 7 times to show **ADVANCED** rows (gyro PS3 pad emulation, reset control layouts).
+The game writes frame times to logcat (`NFSMW`, "Frame time") every 120 frames, with the game state, to help find slow spots such as burnouts.

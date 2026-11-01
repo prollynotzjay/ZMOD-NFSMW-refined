@@ -4,6 +4,7 @@ constexpr uint32_t diInvalid=0x80070057,diNotAcquired=0x8007000c;
 std::mutex inputMutex;
 std::array<uint8_t,256> inputKeys{};
 std::atomic<bool> inputDrivingMode{false};
+std::atomic<int> inputGameState{0};   // MW GameFlow state: 3 = front end, 6 = racing, the rest loading
 std::array<uint8_t,8> inputMouseButtons{};
 int32_t inputMouseX{},inputMouseY{},inputMouseZ{};
 // Touch as an ABSOLUTE pointer through Speed.exe's relative DirectInput mouse:
@@ -396,7 +397,7 @@ void inputDispatch(){
             ret(!object.acquired?diNotAcquired:diInvalid,3);return;}
         std::lock_guard<std::mutex> lock(inputMutex);std::memset(ptr(arg(2),object.size),0,object.size);
         if(kind==2&&g_cur_func>=imageBase&&g_cur_func<imageBase+imageSize){
-            inputDrivingMode=read32(0x00925E90)==6; // MW GameFlow state; raw keyboard has no driving action map.
+            {uint32_t flow=read32(0x00925E90);inputGameState=int(flow);inputDrivingMode=flow==6;} // MW GameFlow state; raw keyboard has no driving action map.
             static int lastEnter=-1;int enter=inputKeys[0x1c];
             if(enter!=lastEnter){lastEnter=enter;NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Keyboard snapshot Enter=%02x bytes=%u objects=%zu caller=%08x",enter,object.size,object.format.size(),g_cur_func);}
         }
