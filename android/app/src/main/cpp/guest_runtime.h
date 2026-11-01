@@ -11,6 +11,7 @@ void setGuestKey(unsigned scan,bool down);
 void clearGuestInput();
 bool guestDrivingControls();
 int guestGameState();
+std::string guestFeScreens();
 void setGuestVirtualSteer(float steer);
 // Physical gamepad seen by the game as a DirectInput joystick: axes X, Y, Z
 // (triggers), Rx, Ry, Rz in -1..1; buttons A B X Y LB RB Back Start LS RS as bits.

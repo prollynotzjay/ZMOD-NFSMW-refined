@@ -4,7 +4,35 @@ constexpr uint32_t diInvalid=0x80070057,diNotAcquired=0x8007000c;
 std::mutex inputMutex;
 std::array<uint8_t,256> inputKeys{};
 std::atomic<bool> inputDrivingMode{false};
-std::atomic<int> inputGameState{0};   // MW GameFlow state: 3 = front end, 6 = racing, the rest loading
+std::mutex inputScreensMutex;
+std::string inputScreens;   // "name:inputEnabled:controlMask:mouseObjects;" for each front-end package, read from the game
+// The front end's screens (FEng packages), read like src/runtime/widescreen.c does for the HUD: FEngine = [[0x91CADC]], packages in
+// the list at engine+0xE0 (next +4, name +0xC). Input flags at +0x28 / +0x20 and the mouse-object count at +0xB0 are the Xbox build's
+// layout, which the same engine shares; they are logged so a capture shows whether they hold on the PC build.
+static uint32_t peekGuest32(uint32_t va){return va&&memory&&memory->readable(va,4)?read32(va):0;}
+static void scanFrontEnd(){
+    uint32_t manager=peekGuest32(0x0091CADC),engine=manager?peekGuest32(manager):0;
+    std::string out;
+    if(engine){
+        unsigned guard=0;
+        for(uint32_t package=peekGuest32(engine+0xE0);package&&guard<48;package=peekGuest32(package+4),++guard){
+            std::string name;
+            uint32_t text=peekGuest32(package+0xC);
+            for(uint32_t i=0;text&&i<40&&memory->readable(text+i,1);++i){char c=*static_cast<char*>(ptr(text+i,1));if(!c)break;name+=(c>=32&&c<127&&c!=':'&&c!=';')?c:'?';}
+            if(name.empty())continue;
+            uint32_t enabled=memory->readable(package+0x28,1)?*static_cast<uint8_t*>(ptr(package+0x28,1)):0;
+            out+=name+":"+std::to_string(enabled)+":"+std::to_string(peekGuest32(package+0x20))+":"+std::to_string(int32_t(peekGuest32(package+0xB0)))+";";
+        }
+    }
+    std::lock_guard<std::mutex> lock(inputScreensMutex);
+    if(out!=inputScreens){
+        inputScreens=out;
+        static unsigned logged=0;
+        if(++logged<=300)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","FE screens (name:enabled:mask:mouse) %s",out.c_str());
+    }
+}
+std::atomic<int> inputGameState{0};
+   // MW GameFlow state: 3 = front end, 6 = racing, the rest loading
 std::array<uint8_t,8> inputMouseButtons{};
 int32_t inputMouseX{},inputMouseY{},inputMouseZ{};
 // Touch as an ABSOLUTE pointer through Speed.exe's relative DirectInput mouse:
@@ -397,7 +425,8 @@ void inputDispatch(){
             ret(!object.acquired?diNotAcquired:diInvalid,3);return;}
         std::lock_guard<std::mutex> lock(inputMutex);std::memset(ptr(arg(2),object.size),0,object.size);
         if(kind==2&&g_cur_func>=imageBase&&g_cur_func<imageBase+imageSize){
-            {uint32_t flow=read32(0x00925E90);inputGameState=int(flow);inputDrivingMode=flow==6;} // MW GameFlow state; raw keyboard has no driving action map.
+            {uint32_t flow=read32(0x00925E90);inputGameState=int(flow);inputDrivingMode=flow==6;
+             static unsigned scanTick=0;if((++scanTick&7)==0)scanFrontEnd();} // MW GameFlow state; raw keyboard has no driving action map.
             static int lastEnter=-1;int enter=inputKeys[0x1c];
             if(enter!=lastEnter){lastEnter=enter;NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSMW","Keyboard snapshot Enter=%02x bytes=%u objects=%zu caller=%08x",enter,object.size,object.format.size(),g_cur_func);}
         }

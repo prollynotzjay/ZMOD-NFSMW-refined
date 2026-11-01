@@ -3,11 +3,15 @@ package com.nfsmw.androidevolved;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -64,6 +68,12 @@ final class RacingControlsView extends View {
     private Ctx ctx = Ctx.LOADING;
     private int gameState, overlay = OVERLAY_NONE;
     private boolean forceMenu, raceStarted, gasAuto;
+    // The game's own front-end screens (see GameActivity.nativeFeScreens): what is really on screen.
+    private String screens = "";
+    private boolean feMenu, feMap, feKnown, manualOverlay;
+    private final HashMap<String, Bitmap> art = new HashMap<>();
+    private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final RectF artRect = new RectF();
     private boolean editing, hiddenByGamepad, gamepadConnected;
     private Control selected;
     private int dragPointer = -1;
@@ -118,7 +128,10 @@ final class RacingControlsView extends View {
     }
 
     private Ctx computeCtx() {
-        if (gameState == 6) return overlay == OVERLAY_PAUSE ? Ctx.PAUSE : overlay == OVERLAY_MAP ? Ctx.MAP : Ctx.RACE;
+        if (gameState == 6) {
+            if (feKnown && !manualOverlay) return feMap ? Ctx.MAP : feMenu ? Ctx.PAUSE : Ctx.RACE;
+            return overlay == OVERLAY_PAUSE ? Ctx.PAUSE : overlay == OVERLAY_MAP ? Ctx.MAP : Ctx.RACE;
+        }
         if (forceMenu) return Ctx.MENU;
         return loadingState(gameState) ? Ctx.LOADING : Ctx.MENU;
     }
@@ -128,13 +141,44 @@ final class RacingControlsView extends View {
         if (state == gameState) return;
         Log.i("NFSMW", "GameFlow state " + gameState + " -> " + state);
         if (state == 6 && gameState != 6) raceStarted = true;
-        gameState = state; overlay = OVERLAY_NONE; forceMenu = false;
+        gameState = state; overlay = OVERLAY_NONE; forceMenu = false; manualOverlay = false;
         if (!editing) applyContext();
     }
 
     private void applyContext() {
         Ctx next = computeCtx();
         if (next != ctx) { ctx = next; layoutControls(); } else updateAutoGas();
+    }
+
+    /**
+     * The game's front-end packages, "name:inputEnabled:controlMask:mouseObjects;..." (nativeFeScreens). A package that takes
+     * input and has mouse regions is a menu; one whose name has "map" is the world map. This is what tells the pause menu
+     * and the map from the race HUD, instead of guessing from the buttons pressed.
+     */
+    void setScreens(String value) {
+        if (value == null) value = "";
+        if (value.equals(screens)) return;
+        screens = value;
+        boolean menu = false, map = false, known = false;
+        for (String entry : value.split(";")) {
+            String[] field = entry.split(":");
+            if (field.length < 4) continue;
+            try {
+                boolean enabled = "1".equals(field[1]);
+                long mask = Long.parseLong(field[2]);
+                int mouse = Integer.parseInt(field[3]);
+                if (enabled) known = true;
+                if (enabled && (mask & 1) != 0 && mouse > 0) {
+                    menu = true;
+                    if (field[0].toLowerCase(java.util.Locale.ROOT).contains("map")) map = true;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        boolean changed = menu != feMenu || map != feMap;
+        feMenu = menu; feMap = map; feKnown = known;
+        if (changed) manualOverlay = false;   // the screens moved on: trust them again
+        if (!editing) applyContext();
     }
 
     /** True once after a race starts: the gyro is recalibrated to the player's position. */
@@ -146,7 +190,12 @@ final class RacingControlsView extends View {
 
     private void toggleOverlay() {
         if (ctx == Ctx.LOADING || forceMenu) forceMenu = !forceMenu;
-        else if (gameState == 6) overlay = overlay == OVERLAY_NONE ? OVERLAY_PAUSE : OVERLAY_NONE;
+        else if (gameState == 6) {
+            // Without a detected menu the switch opens one; with one up it closes back to driving. Either way it
+            // overrides the detection until the screens change.
+            manualOverlay = true;
+            overlay = ctx == Ctx.RACE ? OVERLAY_PAUSE : OVERLAY_NONE;
+        }
         applyContext();
     }
 
@@ -161,6 +210,73 @@ final class RacingControlsView extends View {
     private void updateAutoGas() {
         boolean want = ctx == Ctx.RACE && !editing && !hiddenByGamepad && !BUTTONS.equals(scheme) && autoGas && !brakeHeld();
         if (want != gasAuto) { gasAuto = want; keys.set(0xc8, want); }
+    }
+
+    // ---- Art (MostWanted-Android's button set, see THIRD_PARTY_NOTICES.md) --------------------------------
+
+    private static String artFile(String icon) {
+        switch (icon) {
+            case "left": return "left"; case "right": return "right"; case "up": return "up"; case "down": return "down";
+            case "gas": return "rt"; case "brake": return "lt";
+            case "handbrake": case "accept": return "a";
+            case "nitro": case "back": return "b";
+            case "speedbreaker": return "x";
+            case "camera": return "black";
+            case "reset": return "reset_car";
+            case "pause": return "start";
+            case "wheel": return "wheel";
+            default: return null;
+        }
+    }
+
+    private Bitmap art(String icon) {
+        String file = artFile(icon);
+        if (file == null) return null;
+        Bitmap bitmap = art.get(file);
+        if (bitmap == null && !art.containsKey(file)) {
+            try (java.io.InputStream in = getContext().getAssets().open("touch/" + file + ".png")) {
+                bitmap = BitmapFactory.decodeStream(in);
+            } catch (java.io.IOException ignored) {
+            }
+            art.put(file, bitmap);
+        }
+        return bitmap;
+    }
+
+    private static String caption(String icon) {
+        switch (icon) {
+            case "accept": return "ACCEPT";
+            case "back": return "BACK";
+            default: return null;
+        }
+    }
+
+    /** Draws the art for a control: body centred on the control, with the badge above it when the art has one. */
+    private boolean drawArt(Canvas canvas, Control c, Bitmap bitmap, boolean on) {
+        float cx = c.area.centerX(), cy = c.area.centerY();
+        if (c.shape == PEDAL) {
+            // Pedals keep the art's shape: fitted inside the control's box.
+            float fit = Math.min(c.area.width() / bitmap.getWidth(), c.area.height() / bitmap.getHeight());
+            float w = bitmap.getWidth() * fit, h = bitmap.getHeight() * fit;
+            artRect.set(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2);
+        } else {
+            float diameter = Math.min(c.area.width(), c.area.height());
+            float s = diameter / bitmap.getWidth();
+            float h = bitmap.getHeight() * s, bodyCentre = (bitmap.getHeight() - bitmap.getWidth() / 2f) * s;
+            artRect.set(cx - diameter / 2, cy - bodyCentre, cx + diameter / 2, cy - bodyCentre + h);
+        }
+        bitmapPaint.setColorFilter(on ? new PorterDuffColorFilter(0xAAFFB000, PorterDuff.Mode.SRC_ATOP) : null);
+        canvas.drawBitmap(bitmap, null, artRect, bitmapPaint);
+        bitmapPaint.setColorFilter(null);
+        return true;
+    }
+
+    private void drawCaption(Canvas canvas, Control c, String label) {
+        text.setTextSize(9.5f); text.setColor(Color.WHITE);
+        float w = text.measureText(label) + 14, cx = c.area.centerX(), top = c.area.bottom + 3;
+        rect.set(cx - w / 2, top, cx + w / 2, top + 15);
+        fill.setStyle(Paint.Style.FILL); fill.setColor(0xB0000000); canvas.drawRoundRect(rect, 7.5f, 7.5f, fill);
+        canvas.drawText(label, cx, top + 11.5f, text);
     }
 
     // ---- Layout -----------------------------------------------------------------------------------------
@@ -239,8 +355,9 @@ final class RacingControlsView extends View {
         add(cx - pad / 2, cy + pad * .5f, pad, "down", 0xd0);
         add(cx - pad * 1.5f, cy - pad / 2, pad, "left", 0xcb);
         add(cx + pad * .5f, cy - pad / 2, pad, "right", 0xcd);
-        add(w - m - 78, h - m - 78, 78, "accept", 0x1c);
-        if (ctx != Ctx.MAP) add(w - m - 78 - 66, h - m - 58, 58, "back", 0x01);   // Escape: back in menus
+        // The pad's diamond, as the game's own prompts are named: A accept at the bottom, B back up and to its right.
+        add(w - m - 150, h - m - 90, 66, "accept", 0x1c);
+        add(w - m - 78, h - m - 136, 62, "back", 0x01);                            // Escape: back in menus
         if (keyboard) add(m, m - 2, 40, "keyboard", TEXT);
     }
 
@@ -259,17 +376,17 @@ final class RacingControlsView extends View {
             add(m + 50, h - m - 208, 44, "shiftDown", 0x1d); // Left Control
             add(m + 100, h - m - 208, 44, "camera", 0x2e);
             // The pedals sit at the right edge; the speedometer is left of them.
-            add(w - m - 80, h - m - 150, 80, 150, PEDAL, "gas", 0xc8, GAS_COLOR);
-            add(w - m - 160, h - m - 112, 72, 112, PEDAL, "brake", 0xd0, BRAKE_COLOR);
-            add(w - m - 66, h - m - 226, 66, "nitro", 0x38);   // Left Alt
-            add(w - m - 128, h - m - 216, 54, "speedbreaker", 0x9d); // Right Control
+            add(w - m - 84, h - m - 113, 84, 113, PEDAL, "gas", 0xc8, GAS_COLOR);
+            add(w - m - 84 - 8 - 80, h - m - 65, 80, 65, PEDAL, "brake", 0xd0, BRAKE_COLOR);
+            add(w - m - 66, h - m - 113 - 10 - 66 - 8, 66, "nitro", 0x38);   // Left Alt
+            add(w - m - 66 - 8 - 54, h - m - 113 - 10 - 54 - 8, 54, "speedbreaker", 0x9d); // Right Control
         } else if (EDGE.equals(scheme)) {
             // Hold the left or right edge of the screen to steer; the buttons sit just inside the edges.
             float strip = Math.max(90, w * .15f);
             addZone(0, h * .2f, strip, h * .8f, "zoneLeft", 0xcb);
             addZone(w - strip, h * .2f, strip, h * .8f, "zoneRight", 0xcd);
             float right = w - strip - 8, top = h * .27f;
-            add(right - 56, top, 56, "brake", 0xd0);
+            add(right - 74, top + 4, 74, 60, PEDAL, "brake", 0xd0, BRAKE_COLOR);
             add(right - 120, top, 56, "nitro", 0x38);
             add(right - 56, top + 62, 56, "handbrake", 0x39);
             add(right - 120, top + 62, 52, "speedbreaker", 0x9d);
@@ -280,14 +397,14 @@ final class RacingControlsView extends View {
             if (needGas) add(left, h - m - 66, 66, "gas", 0xc8);
         } else {
             // Gyro: the phone steers. Brake and nitro at the right edge, handbrake at the left.
-            add(w - m - 84, h - m - 130, 84, 130, PEDAL, "brake", 0xd0, BRAKE_COLOR);
-            add(w - m - 66, h - m - 206, 66, "nitro", 0x38);
-            add(w - m - 128, h - m - 196, 54, "speedbreaker", 0x9d);
+            add(w - m - 100, h - m - 82, 100, 82, PEDAL, "brake", 0xd0, BRAKE_COLOR);
+            add(w - m - 66, h - m - 82 - 10 - 66 - 8, 66, "nitro", 0x38);
+            add(w - m - 66 - 8 - 54, h - m - 82 - 10 - 54 - 8, 54, "speedbreaker", 0x9d);
             add(m, h - m - 74, 74, "handbrake", 0x39);
             add(m, h - m - 130, 44, "shiftUp", 0x2a);
             add(m + 50, h - m - 130, 44, "shiftDown", 0x1d);
             add(m + 100, h - m - 130, 44, "camera", 0x2e);
-            if (needGas) add(w - m - 84 - 82, h - m - 150, 76, 150, PEDAL, "gas", 0xc8, GAS_COLOR);
+            if (needGas) add(w - m - 100 - 8 - 70, h - m - 95, 70, 95, PEDAL, "gas", 0xc8, GAS_COLOR);
         }
     }
 
@@ -339,10 +456,18 @@ final class RacingControlsView extends View {
         boolean on = c.held > 0, picked = editing && c == selected;
         float cx = c.area.centerX(), cy = c.area.centerY(), r = Math.min(c.area.width(), c.area.height()) / 2;
         float alpha = on || editing ? 1f : opacity;
-        int layer = canvas.saveLayerAlpha(c.area.left - 14, c.area.top - 14, c.area.right + 14, c.area.bottom + 14, (int) (alpha * 255));
+        int layer = canvas.saveLayerAlpha(c.area.left - 14, c.area.top - 30, c.area.right + 14, c.area.bottom + 30, (int) (alpha * 255));
         if (on) canvas.scale(.94f, .94f, cx, cy);
         int accent = ControlIcons.accent(c.icon);
         fill.setStyle(Paint.Style.FILL);
+        Bitmap bitmap = art(c.icon);
+        if (bitmap != null) {
+            drawArt(canvas, c, bitmap, on);
+            String label = ctx == Ctx.RACE || editing ? null : caption(c.icon);
+            if (label != null) drawCaption(canvas, c, label);
+            canvas.restoreToCount(layer);
+            return;
+        }
         if (c.shape == PEDAL) {
             float corner = c.area.width() * .3f;
             rect.set(c.area.left, c.area.top + 3, c.area.right, c.area.bottom + 3);

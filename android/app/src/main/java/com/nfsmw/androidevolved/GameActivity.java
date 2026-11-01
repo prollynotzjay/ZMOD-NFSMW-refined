@@ -38,6 +38,7 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeKey(int scan, boolean down);
     private static native boolean nativeDrivingControls();
     private static native int nativeGameState();
+    private static native String nativeFeScreens();
     private static native void nativeVirtualSteer(float steer);
     private static native boolean nativeGamepadUsed();
     private final boolean[] touchKeys=new boolean[256],sentKeys=new boolean[256];
@@ -144,6 +145,7 @@ public final class GameActivity extends NativeActivity {
     private final Runnable updateControlMode = new Runnable() {
         @Override public void run() {
             if(!foreground||touchControls==null)return;
+            touchControls.setScreens(nativeFeScreens());
             touchControls.setGameState(nativeGameState());
             if(touchControls.takeRaceStarted()&&gyro!=null)gyro.recalibrate();
             // Playing on with the pad after a touch revealed the controls hides them again.

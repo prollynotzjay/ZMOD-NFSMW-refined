@@ -325,6 +325,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nat
 }
 extern "C" JNIEXPORT jboolean JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeDrivingControls(JNIEnv*,jclass){return guestDrivingControls()?JNI_TRUE:JNI_FALSE;}
 extern "C" JNIEXPORT jint JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeGameState(JNIEnv*,jclass){return guestGameState();}
+extern "C" JNIEXPORT jstring JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeFeScreens(JNIEnv* env,jclass){return env->NewStringUTF(guestFeScreens().c_str());}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativeVirtualSteer(JNIEnv*,jclass,jfloat steer){setGuestVirtualSteer(steer);}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsmw_androidevolved_GameActivity_nativePointer(JNIEnv*,jclass,jfloat x,jfloat y,jint phase){
     setGuestPointer(x,y,phase);

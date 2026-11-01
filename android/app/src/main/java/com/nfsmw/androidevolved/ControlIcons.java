@@ -134,12 +134,13 @@ final class ControlIcons {
                 c.drawLine(cx + s * .2f, cy, cx + s * .92f, cy, line);
                 c.drawLine(cx, cy + s * .2f, cx, cy + s * .92f, line);
                 break;
-            case "settings":                       // sliders
-                fill.setStyle(Paint.Style.FILL);
-                for (int i = -1; i <= 1; ++i) {
-                    float y = cy + i * s * .62f, k = cx + (i == 0 ? s * .35f : -s * .35f);
-                    c.drawLine(cx - s * .88f, y, cx + s * .88f, y, line);
-                    c.drawCircle(k, y, s * .24f, fill);
+            case "settings":                       // gear
+                c.drawCircle(cx, cy, s * .55f, line);
+                c.drawCircle(cx, cy, s * .2f, line);
+                for (int i = 0; i < 8; ++i) {
+                    double a = i * Math.PI / 4;
+                    c.drawLine(cx + (float) Math.cos(a) * s * .72f, cy + (float) Math.sin(a) * s * .72f,
+                            cx + (float) Math.cos(a) * s * 1.02f, cy + (float) Math.sin(a) * s * 1.02f, line);
                 }
                 break;
             case "accept":

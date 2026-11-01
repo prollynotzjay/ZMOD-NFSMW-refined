@@ -60,7 +60,8 @@ In game, pick one of three driving schemes (launcher **Driving controls**, or se
 | **Gyro steering** | Turn the phone like a wheel (game rotation vector, calibrated when a race starts). Output is smooth key pulses, or a PS3-style analog stick with *PS3 pad emulation* |
 
 The controls follow the game: driving controls in a race, menu controls in the front end and over the pause menu,
-a compact set on the world map, and nothing on loading screens. Every control can be moved and resized, and each
+a compact set on the world map, and nothing on loading screens. The game's own front-end screens are read from memory,
+as in [MostWanted-Android](https://github.com/RanggaCasper/MostWanted-Android), to tell the pause menu and the map from the race HUD. Every control can be moved and resized, and each
 button has its own icon. A Bluetooth/USB gamepad hides the touch controls while it is used.
 
 ### Mali
@@ -112,6 +113,7 @@ work/      (local only) analysis copy, catalog, logs
 - **codepdbh**: the original recompilation, Android runtime and port
   ([nfsmwpc-recompiled](https://github.com/codepdbh/nfsmwpc-recompiled)).
 - **prollynotzjay**: NFSMW Refined: English-only, offline, Mali profile, launcher and artwork.
+- **RanggaCasper** ([MostWanted-Android](https://github.com/RanggaCasper/MostWanted-Android), MIT): the touch-control layouts and the idea of switching controls by the game's own screens. **bagasromadon**: the button design (art in `assets/touch`).
 - **sp00nznet**: pcrecomp. Proportional HUD adaptation follows ThirteenAG's WidescreenFix
   ([notice](THIRD_PARTY_NOTICES.md)).
 - Fonts: Nunito (SIL OFL) and Rock Salt (Apache 2.0), in `android/app/src/main/assets/fonts`.
@@ -122,4 +124,5 @@ game files.
 ### Hidden options
 
 Tap the version line in the launcher 7 times to show **ADVANCED** rows (gyro PS3 pad emulation, reset control layouts).
+The launcher's *Report a problem* saves the app's own log (frame times, game states and front-end screens) in `Downloads/NFSMW Refined`.
 The game writes frame times to logcat (`NFSMW`, "Frame time") every 120 frames, with the game state, to help find slow spots such as burnouts.
