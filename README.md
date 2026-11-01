@@ -6,7 +6,7 @@
 
 **Need for Speed: Most Wanted (2005, PC) running natively on Android**
 
-English only · offline · Mali support · GTA IV-style launcher
+English only · offline · Mali support · Peak launcher design
 
 By **[prollynotzjay](https://github.com/prollynotzjay)**, based on
 **[codepdbh/nfsmwpc-recompiled](https://github.com/codepdbh/nfsmwpc-recompiled)**
@@ -27,7 +27,7 @@ It is **not** an emulator and **not** a port of the Xbox 360 version.
 | Language | Launcher in Spanish / English / Portuguese, game in any language | **English only**, launcher and game text |
 | Online | EA Nation community server | **Removed**: offline, like the original game today. LAN races still work |
 | GPU | Vulkan, custom Adreno drivers | **Mali profile**: detects Mali GPUs and applies tuned settings |
-| Launcher | Two-column options screen | **GTA IV-style launcher** in Most Wanted colours |
+| Launcher | Two-column options screen | **Peak launcher design** in Most Wanted colours |
 | App | NFS Most Wanted Android Evolved | **NFSMW Refined**, its own package, installs next to the original |
 
 ## Playing
